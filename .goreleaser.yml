@@ -1,0 +1,14 @@
+project_name: jsonnet-lsp
+builds:
+  - env: [CGO_ENABLED=0]
+    ldflags:
+      - -w -s
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+archives:
+  - id: jsonnet-lsp
+    format: binary
