@@ -7,7 +7,7 @@
     "url": "https://github.com/carlverge/jsonnet-lsp/editor/code/package.json"
   },
   "description": "",
-  "version": "0.0.1",
+  "version": "0.0.6",
   "engines": {
     "vscode": "^1.72.0"
   },
