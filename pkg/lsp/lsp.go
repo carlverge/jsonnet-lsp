@@ -97,10 +97,15 @@ func findRootDirectory(params *protocol.InitializeParams) uri.URI {
 	for _, f := range params.WorkspaceFolders {
 		return uri.URI(f.URI)
 	}
+
+	//lint:ignore SA1019 backwards compat
 	if params.RootURI != "" {
+		//lint:ignore SA1019 backwards compat
 		return params.RootURI
 	}
+	//lint:ignore SA1019 backwards compat
 	if params.RootPath != "" {
+		//lint:ignore SA1019 backwards compat
 		return uri.File(params.RootPath)
 	}
 	cwd, _ := os.Getwd()
