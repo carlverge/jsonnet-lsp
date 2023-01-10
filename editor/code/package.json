@@ -1,6 +1,7 @@
 {
   "name": "jsonnet-lsp",
   "displayName": "Jsonnet LSP",
+  "publisher": "cverge",
   "repository": {
     "type": "git",
     "url": "https://github.com/carlverge/jsonnet-lsp/editor/code/package.json"
@@ -62,13 +63,13 @@
       "type": "object",
       "title": "Jsonnet",
       "properties": {
-        "jsonnet.lsp.serverBinary": {
+        "jsonnet.lsp.binaryPath": {
           "type": [
             "string",
             "null"
           ],
-          "default": "jsonnet-lsp",
-          "description": "Binary path for jsonnet language server",
+          "default": null,
+          "description": "Binary path for jsonnet language server. If not set, the bundled LSP will be used.",
           "scope": "resource"
         }
       }
