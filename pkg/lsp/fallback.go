@@ -7,18 +7,6 @@ import (
 	"go.lsp.dev/protocol"
 )
 
-// FallbackServer is a complete implementation of the protocol.Server interface
-// that responds with a "method not found" error for all methods.
-//
-// LSP provides a rich capabilities system, so servers don't need to implement
-// all functionality. However, the protocol.Server interface contains ALL
-// possible methods yet is desirable to use because a jsonrpc2.Handler wrapper
-// is provided which handles repetitive logic like (un)marshaling.
-//
-// FallbackServer is intended to be embedded within a real server struct
-// implementation, which can then override methods as needed. This is purely
-// for convenience and to make the code easier to browse, as the numerous
-// stub methods are not intermingled with actual functionality.
 type FallbackServer struct{}
 
 var _ protocol.Server = FallbackServer{}
