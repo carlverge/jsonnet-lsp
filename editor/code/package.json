@@ -1,0 +1,96 @@
+{
+  "name": "jsonnet-lsp",
+  "displayName": "Jsonnet LSP",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/carlverge/jsonnet-lsp/editor/code/package.json"
+  },
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.72.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Formatters",
+    "Snippets"
+  ],
+  "activationEvents": [
+    "onLanguage:jsonnet"
+  ],
+  "keywords": [
+		"jsonnet",
+		"lsp"
+	],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "jsonnet",
+        "extensions": [
+          ".jsonnet",
+          ".libsonnet",
+          ".jsonnet.TEMPLATE"
+        ],
+        "aliases": [
+          "Jsonnet"
+        ],
+        "configuration": "./syntax/language-configuration.json"
+      }
+    ],
+    "snippets": [
+      {
+          "language": "jsonnet",
+          "path": "./syntax/snippets.json"
+      }
+    ],
+    "grammars": [
+        {
+            "language": "jsonnet",
+            "scopeName": "source.jsonnet",
+            "path": "./syntax/jsonnet.tmLanguage.json"
+        }
+    ],
+    "commands": [
+      {
+				"command": "jsonnet.lsp.restart",
+				"title": "Jsonnet: Restart Language Server"
+			}
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Jsonnet",
+      "properties": {
+        "jsonnet.lsp.serverBinary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": "jsonnet-lsp",
+          "description": "Binary path for jsonnet language server",
+          "scope": "resource"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -b ./",
+    "watch": "tsc -watch -b ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "dependencies": {
+    "@types/vscode": "^1.69.0",
+		"vscode-languageclient": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^12.12.0",
+		"@typescript-eslint/eslint-plugin": "^4.23.0",
+		"@typescript-eslint/parser": "^4.23.0",
+		"eslint": "^7.26.0",
+		"typescript": "^4.4.3"
+  }
+}
