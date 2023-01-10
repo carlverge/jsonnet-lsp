@@ -4,10 +4,13 @@
   "publisher": "cverge",
   "repository": {
     "type": "git",
-    "url": "https://github.com/carlverge/jsonnet-lsp/editor/code/package.json"
+    "url": "https://github.com/carlverge/jsonnet-lsp"
   },
-  "description": "",
-  "version": "0.0.6",
+  "homepage": "https://github.com/carlverge/jsonnet-lsp/blob/main/editor/code/README.md",
+  "license": "Apache License Version 2.0",
+  "description": "Jsonnet IDE Support. Autocomplete, lint, format, goto def, signature help.",
+  "icon": "images/icon.png",
+  "version": "0.0.7",
   "engines": {
     "vscode": "^1.72.0"
   },
@@ -25,6 +28,7 @@
 		"lsp"
 	],
   "main": "./out/extension.js",
+  "extensionKind": ["workspace", "ui"],
   "contributes": {
     "languages": [
       {
