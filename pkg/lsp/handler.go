@@ -47,6 +47,8 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 		logf("no bazel-bin dir: %v", err)
 	}
 
+	s.importer = &OverlayImporter{overlay: s.overlay, rootURI: s.rootURI, rootFS: s.rootFS, paths: s.searchPaths}
+
 	logf("initialized with rootURI=%s searchURI=%v", s.rootURI, s.searchPaths)
 
 	_ = s.notifier.LogMessage(ctx, &protocol.LogMessageParams{
@@ -495,7 +497,7 @@ func (s *Server) Formatting(ctx context.Context, params *protocol.DocumentFormat
 		SortImports:      true,
 		UseImplicitPlus:  true,
 		PadArrays:        false,
-		PadObjects:       false,
+		PadObjects:       true,
 	}
 
 	out, err := formatter.Format(params.TextDocument.URI.Filename(), current.Contents, fmtopts)

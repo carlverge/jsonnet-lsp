@@ -54,6 +54,13 @@ func FmtNode(n ast.Node) string {
 	}
 }
 
+// WalkStack will walk the AST in depth first order, and keep track of the stack
+// from the root of the AST. It will call callback function `fn` on every node it
+// traverses. If `fn` returns false, it will not traverse to that nodes children.
+func WalkStack(node ast.Node, fn func(n ast.Node, stack []ast.Node) bool) {
+	walkStack(node, nil, fn)
+}
+
 func walkStack(node ast.Node, stk []ast.Node, fn func(n ast.Node, stk []ast.Node) bool) {
 	stk = append(stk, node)
 	if !fn(node, stk) {
