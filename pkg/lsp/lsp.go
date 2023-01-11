@@ -34,8 +34,9 @@ type Server struct {
 	rootFS      fs.FS
 	searchPaths []string
 
-	overlay *overlay.Overlay
-	vmlock  sync.Mutex
+	overlay  *overlay.Overlay
+	importer *OverlayImporter
+	vmlock   sync.Mutex
 
 	// intentionally only keep one active VM at once
 	// when an operation needs a full VM (f.ex if it needs to
@@ -112,57 +113,69 @@ func findRootDirectory(params *protocol.InitializeParams) uri.URI {
 	return uri.File(cwd)
 }
 
-func (s *Server) readURI(uri uri.URI) ([]byte, error) {
+// cachedImporter will keep the file contents
+// of each imported file stable. This is important for an LSP as
+// file contents will change rather dynamically. The jsonnet VM
+// will panic if it notices a file has changed underneath it.
+type cachedImporter struct {
+	lock     sync.Mutex
+	notFound map[[2]string]error
+	foundAt  map[[2]string]string
+	cache    map[string]jsonnet.Contents
+	real     jsonnet.Importer
+}
+
+func (imp *cachedImporter) Import(from, path string) (contents jsonnet.Contents, foundAt string, err error) {
+	imp.lock.Lock()
+	defer imp.lock.Unlock()
+
+	key := [2]string{from, path}
+	if foundAt, ok := imp.foundAt[key]; ok {
+		return imp.cache[foundAt], foundAt, nil
+	}
+
+	if err, ok := imp.notFound[key]; ok {
+		return jsonnet.Contents{}, "", err
+	}
+
+	contents, foundAt, err = imp.real.Import(from, path)
+	if err != nil {
+		imp.notFound[key] = err
+		return contents, foundAt, err
+	}
+
+	imp.foundAt[key] = foundAt
+	if _, ok := imp.cache[foundAt]; !ok {
+		imp.cache[foundAt] = contents
+	}
+	// Always pull from the cache so we return the same value to jsonnet
+	// if two imports hit the same file. Jsonnet will panic if we return
+	// different contents, so this is critical.
+	return imp.cache[foundAt], foundAt, nil
+}
+
+type OverlayImporter struct {
+	overlay *overlay.Overlay
+	rootURI uri.URI
+	rootFS  fs.FS
+	paths   []string
+}
+
+func (imp *OverlayImporter) readURI(uri uri.URI) ([]byte, error) {
 	// check overlay first -- use parsed as an unparsable result is not useful
-	if ent := s.overlay.Parsed(uri); ent != nil {
+	if ent := imp.overlay.Parsed(uri); ent != nil {
 		return []byte(ent.Contents), nil
 	}
 
-	path, err := filepath.Rel(s.rootURI.Filename(), uri.Filename())
+	path, err := filepath.Rel(imp.rootURI.Filename(), uri.Filename())
 	if err != nil {
 		return nil, fmt.Errorf("failed to open URI '%s': %v", uri, err)
 	}
-	return fs.ReadFile(s.rootFS, path)
+	return fs.ReadFile(imp.rootFS, path)
 }
 
-type lspImporter func(importedFrom, importedPath string) (contents jsonnet.Contents, foundAt string, err error)
-
-func (l lspImporter) Import(importedFrom, importedPath string) (contents jsonnet.Contents, foundAt string, err error) {
-	return l(importedFrom, importedPath)
-}
-
-type foundCacheItem struct {
-	err      error
-	contents jsonnet.Contents
-	uri      uri.URI
-}
-
-func (s *Server) newImporter(from uri.URI) jsonnet.Importer {
-	// assumption: a single importer will not be called concurrently, as the VM
-	// it belongs to much be synchronized regardless
-	cache := map[string]*foundCacheItem{}
-	return lspImporter(func(importedFrom, importedPath string) (contents jsonnet.Contents, foundAt string, err error) {
-		if item, ok := cache[importedPath]; ok {
-			if item.err != nil {
-				return jsonnet.Contents{}, "", item.err
-			}
-			return item.contents, item.uri.Filename(), nil
-		}
-		data, foundURI, err := s.readPath(importedPath, from)
-		if err != nil {
-			// add a negative cache entry
-			cache[importedPath] = &foundCacheItem{err: err}
-			return jsonnet.Contents{}, "", err
-		}
-		contents = jsonnet.MakeContentsRaw(data)
-		cache[importedPath] = &foundCacheItem{contents: contents, uri: foundURI}
-		return contents, foundURI.Filename(), nil
-	})
-}
-
-// readPath will read an import path
-func (s *Server) readPath(path string, from uri.URI) ([]byte, uri.URI, error) {
-	rootPath := s.rootURI.Filename()
+func (imp *OverlayImporter) Import(from, path string) (jsonnet.Contents, string, error) {
+	rootPath := imp.rootURI.Filename()
 
 	// if absolute, rel it to the workspace root
 	if filepath.IsAbs(path) {
@@ -170,9 +183,9 @@ func (s *Server) readPath(path string, from uri.URI) ([]byte, uri.URI, error) {
 	}
 
 	// the path to the importer, relative to the root
-	fromPath, err := filepath.Rel(rootPath, filepath.Dir(from.Filename()))
+	fromPath, err := filepath.Rel(rootPath, filepath.Dir(from))
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to open '%s' -- could not relativize '%s' to root '%s' %v", path, from, s.rootURI, err)
+		return jsonnet.Contents{}, "", fmt.Errorf("failed to open '%s' -- could not relativize '%s' to root '%s' %v", path, from, imp.rootURI, err)
 	}
 
 	// Build a list of candidate URIs to try for the file
@@ -180,18 +193,19 @@ func (s *Server) readPath(path string, from uri.URI) ([]byte, uri.URI, error) {
 		uri.File(filepath.Join(rootPath, path)),
 		uri.File(filepath.Join(rootPath, fromPath, path)),
 	}
-	for _, search := range s.searchPaths {
+	for _, search := range imp.paths {
 		candidates = append(candidates, uri.File(filepath.Join(rootPath, search, path)))
 	}
-
+	logf("read-path: path='%s' from='%s' candidates=%v", path, from, candidates)
 	// logf("searching for path '%s' in candidates %v", path, candidates)
 	for _, candidate := range candidates {
-		data, err := s.readURI(candidate)
+		data, err := imp.readURI(candidate)
 		if err == nil {
-			return data, candidate, nil
+			logf("read-path-hit: path='%s' foundAt=%s", path, candidate.Filename())
+			return jsonnet.MakeContentsRaw(data), candidate.Filename(), nil
 		}
 	}
-	return nil, "", fmt.Errorf("path '%s' not found in candidates %v", path, candidates)
+	return jsonnet.Contents{}, "", fmt.Errorf("path '%s' not found in candidates %v", path, candidates)
 }
 
 func posToProto(p ast.Location) protocol.Position {
@@ -295,7 +309,12 @@ func (s *Server) getVM(uri uri.URI) *vmCache {
 
 	logf("flusing jsonnet vm cache (changed file to %s)", uri)
 	vm := &vmCache{from: uri, vm: jsonnet.MakeVM()}
-	vm.vm.Importer(s.newImporter(uri))
+	vm.vm.Importer(&cachedImporter{
+		notFound: map[[2]string]error{},
+		foundAt:  map[[2]string]string{},
+		cache:    map[string]jsonnet.Contents{},
+		real:     s.importer,
+	})
 	vm.vm.SetTraceOut(io.Discard)
 	s.vm = vm
 
@@ -439,6 +458,9 @@ func (r *valueResolver) NodeAt(loc ast.Location) (node ast.Node, stack []ast.Nod
 }
 
 func (r *valueResolver) Vars(from ast.Node) analysis.VarMap {
+	if from == nil || from.Loc() == nil {
+		return analysis.VarMap{}
+	}
 	root := r.roots[from.Loc().FileName]
 	if root == nil {
 		panic(fmt.Errorf("invariant: resolving var from %T where no root was imported", from))

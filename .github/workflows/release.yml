@@ -5,19 +5,39 @@ on:
     types: [created]
 
 jobs:
-  goreleaser:
+  release:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3.6.0
+      with:
+        node-version: 17
 
     - name: Set up Go
       uses: actions/setup-go@v3
       with:
         go-version: 1.19
+    
+    - name: Build
+      run: |
+        GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-w -s" -o editor/code/jsonnet-lsp_darwin_arm64
+        GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "-w -s" -o editor/code/jsonnet-lsp_darwin_x64
+        GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-w -s" -o editor/code/jsonnet-lsp_linux_arm64
+        GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-w -s" -o editor/code/jsonnet-lsp_linux_x64
+        GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-w -s" -o editor/code/jsonnet-lsp_win32_x64.exe
 
-    - name: GoReleaser Action
-      uses: goreleaser/goreleaser-action@v4.1.0
+    - run: "(cd editor/code && npm ci)"
+    
+    - name: Publish to Open VSX Registry
+      uses: HaaLeo/publish-vscode-extension@v1
       with:
-        args: release --rm-dist
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        packagePath: editor/code/
+        pat: ${{ secrets.OPEN_VSX_TOKEN }}
+
+    - name: Publish to Visual Studio Marketplace
+      uses: HaaLeo/publish-vscode-extension@v1
+      with:
+        pat: ${{ secrets.VS_MARKETPLACE_TOKEN }}
+        registryUrl: https://marketplace.visualstudio.com
+        extensionFile: ${{ steps.publishToOpenVSX.outputs.vsixPath }}
+    

@@ -37,12 +37,17 @@ async function startClient(binaryPath: string): Promise<void> {
 	client.start();
 }
 
+function builtinBinaryPath(): string {
+	const ext = process.platform === 'win32' ? '.exe' :'';
+	return `jsonnet-lsp_${process.platform}_${process.arch}${ext}`;
+}
+
 export async function activate(context: ExtensionContext) {
 	let cfg = workspace.getConfiguration('jsonnet.lsp');
 
-	const binaryPath: string = cfg.get('binaryPath') ?? 
+	const binaryPath: string = cfg.get('binaryPath') ??
 		// use bundled language server if one is not provided
-		context.asAbsolutePath(`jsonnet-lsp_${process.platform}_${process.arch}`);
+		context.asAbsolutePath(builtinBinaryPath());
 
 	await startClient(binaryPath);
 
