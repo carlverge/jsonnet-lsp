@@ -185,7 +185,8 @@ func objectToValue(node *ast.DesugaredObject) *Value {
 
 func importToValue(node *ast.Import, resolver Resolver) *Value {
 	path := node.File.Value
-	if root := resolver.Import(path); root != nil {
+	from := node.LocRange.FileName
+	if root := resolver.Import(from, path); root != nil {
 		// import returns the result of the jsonnet file
 		// strip the locals/assertions and return the result
 		_, ret := UnwindLocals(root)
@@ -306,7 +307,7 @@ type Resolver interface {
 	// on where in the document the caller is
 	Vars(from ast.Node) VarMap
 	NodeAt(loc ast.Location) (node ast.Node, stack []ast.Node)
-	Import(path string) ast.Node
+	Import(from, path string) ast.Node
 }
 
 func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {

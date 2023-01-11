@@ -288,10 +288,10 @@ func (c *vmCache) Use(fn func(vm *jsonnet.VM)) {
 	fn(c.vm)
 }
 
-func (c *vmCache) ImportAST(path string) (ast.Node, uri.URI) {
+func (c *vmCache) ImportAST(from, path string) (ast.Node, uri.URI) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	contents, foundAt, err := c.vm.ImportAST("", path)
+	contents, foundAt, err := c.vm.ImportAST(from, path)
 	if err != nil {
 		return nil, uri.URI("")
 	}
@@ -472,7 +472,7 @@ func (r *valueResolver) Vars(from ast.Node) analysis.VarMap {
 	return analysis.StackVars(stk)
 }
 
-func (r *valueResolver) Import(path string) ast.Node {
+func (r *valueResolver) Import(from, path string) ast.Node {
 	// The reason for this dance is to only grab a VM and importer
 	// if we need to import something. This allows us to avoid thrashing the
 	// vm cache when we don't actually need a full VM to perform analysis
@@ -482,7 +482,7 @@ func (r *valueResolver) Import(path string) ast.Node {
 		}
 		r.vm = r.getvm()
 	}
-	root, _ := r.vm.ImportAST(path)
+	root, _ := r.vm.ImportAST(from, path)
 	if root != nil {
 		r.roots[root.Loc().FileName] = root
 	}
