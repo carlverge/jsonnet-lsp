@@ -17,7 +17,7 @@ type basicTypeCase struct {
 
 func TestBasicType(t *testing.T) {
 	cases := []basicTypeCase{
-		{"Boolean", "false", BooleanType, true},
+		{"Boolean", "false", BooleanType, false},
 		{"null", "null", NullType, true},
 		{"Number", "1234", NumberType, false},
 		{"String", "\"asdf\"", StringType, false},

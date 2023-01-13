@@ -21,6 +21,29 @@ const (
 	NullType     ValueType = 7
 )
 
+func NewValueType(v string) (ValueType, bool) {
+	switch v {
+	case "any":
+		return AnyType, true
+	case "function":
+		return FunctionType, true
+	case "object":
+		return ObjectType, true
+	case "array":
+		return ArrayType, true
+	case "boolean":
+		return BooleanType, true
+	case "number":
+		return NumberType, true
+	case "string":
+		return StringType, true
+	case "null":
+		return NullType, true
+	default:
+		return AnyType, false
+	}
+}
+
 func (v ValueType) String() string {
 	switch v {
 	case AnyType:
@@ -125,6 +148,19 @@ func foddersToComment(node ast.Node, fodders ...ast.Fodder) []string {
 	return res
 }
 
+func commentsToType(comments []string) ValueType {
+	for _, c := range comments {
+		if !(strings.HasPrefix(c, "/*:") && strings.HasSuffix(c, "*/")) {
+			continue
+		}
+		typeComment := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(c, "/*:"), "*/"))
+		if vt, ok := NewValueType(typeComment); ok {
+			return vt
+		}
+	}
+	return AnyType
+}
+
 func functionToValue(node *ast.Function) *Value {
 	res := &Value{
 		Type:     FunctionType,
@@ -137,11 +173,19 @@ func functionToValue(node *ast.Function) *Value {
 	res.Function.ReturnType, _ = simpleToValueType(res.Function.Return)
 
 	for i, param := range node.Parameters {
+		var comments []string
+		if i+1 == len(node.Parameters) {
+			comments = foddersToComment(param.DefaultArg, param.NameFodder, param.EqFodder, node.ParenRightFodder)
+		} else {
+			comments = foddersToComment(param.DefaultArg, param.NameFodder, param.EqFodder, param.CommaFodder)
+		}
+
 		res.Function.Params[i] = Param{
 			Name:    string(param.Name),
 			Default: param.DefaultArg,
 			Range:   param.LocRange,
-			Comment: foddersToComment(param.DefaultArg, param.NameFodder, param.EqFodder, param.CommaFodder),
+			Comment: comments,
+			Type:    commentsToType(comments),
 		}
 	}
 
@@ -163,6 +207,7 @@ func objectToValue(node *ast.DesugaredObject) *Value {
 	for _, fld := range node.Fields {
 		nt, ok := fld.Name.(*ast.LiteralString)
 		if !ok {
+			logf("unknown fld name: %T %v", fld.Name, fld.Name)
 			unknownFields = true
 			continue
 		}
@@ -217,8 +262,6 @@ var binopKnownTypes = map[ast.BinaryOp]ValueType{
 
 func simpleToValueType(node ast.Node) (typ ValueType, isLeaf bool) {
 	switch node := node.(type) {
-	case *ast.LiteralBoolean:
-		return BooleanType, true
 	case *ast.LiteralNull:
 		return NullType, true
 	case *ast.ImportStr, *ast.ImportBin:
@@ -230,6 +273,8 @@ func simpleToValueType(node ast.Node) (typ ValueType, isLeaf bool) {
 			return kt, true
 		}
 		return AnyType, false
+	case *ast.LiteralBoolean:
+		return BooleanType, false
 	case *ast.LiteralNumber:
 		return NumberType, false
 	case *ast.LiteralString:
@@ -334,10 +379,17 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 		}
 	case *ast.LiteralNumber:
 		return &Value{
-			Type:    StringType,
+			Type:    NumberType,
 			Node:    node,
 			Range:   node.LocRange,
 			Comment: []string{node.OriginalString},
+		}
+	case *ast.LiteralBoolean:
+		return &Value{
+			Type:    BooleanType,
+			Node:    node,
+			Range:   node.LocRange,
+			Comment: []string{strconv.FormatBool(node.Value)},
 		}
 	case *ast.Local:
 		if len(node.Binds) == 0 {
@@ -352,6 +404,9 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 		// hardcoded return for the stdlib
 		if string(node.Id) == "std" {
 			return StdLibValue
+		}
+		if string(node.Id) == "$std" {
+			return defaultToValue(node)
 		}
 
 		v := resolver.Vars(node).Get(string(node.Id))

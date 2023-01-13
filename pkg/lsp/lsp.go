@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/carlverge/jsonnet-lsp/pkg/analysis"
+	"github.com/carlverge/jsonnet-lsp/pkg/linter"
 	"github.com/carlverge/jsonnet-lsp/pkg/overlay"
 	"github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/ast"
-	"github.com/google/go-jsonnet/linter"
 	"github.com/hexops/gotextdiff"
 	"github.com/hexops/gotextdiff/span"
 	"go.lsp.dev/jsonrpc2"
@@ -25,6 +25,14 @@ import (
 
 func logf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "I%s]%s\n", time.Now().Format("0201 15:04:05.00000"), fmt.Sprintf(msg, args...))
+}
+
+var traceEnable = true
+
+func tracef(msg string, args ...interface{}) {
+	if traceEnable {
+		fmt.Fprintf(os.Stderr, "I%s]%s\n", time.Now().Format("0201 15:04:05.00000"), fmt.Sprintf(msg, args...))
+	}
 }
 
 type Server struct {
@@ -166,11 +174,11 @@ func (imp *OverlayImporter) readURI(uri uri.URI) ([]byte, error) {
 	if ent := imp.overlay.Parsed(uri); ent != nil {
 		return []byte(ent.Contents), nil
 	}
-
 	path, err := filepath.Rel(imp.rootURI.Filename(), uri.Filename())
 	if err != nil {
 		return nil, fmt.Errorf("failed to open URI '%s': %v", uri, err)
 	}
+	defer func(t time.Time) { tracef("reading file %s in %s", path, time.Since(t)) }(time.Now())
 	return fs.ReadFile(imp.rootFS, path)
 }
 
@@ -196,12 +204,12 @@ func (imp *OverlayImporter) Import(from, path string) (jsonnet.Contents, string,
 	for _, search := range imp.paths {
 		candidates = append(candidates, uri.File(filepath.Join(rootPath, search, path)))
 	}
-	logf("read-path: path='%s' from='%s' candidates=%v", path, from, candidates)
-	// logf("searching for path '%s' in candidates %v", path, candidates)
+	tracef("read-path: path='%s' from='%s' candidates=%v", path, from, candidates)
+	tracef("searching for path '%s' in candidates %v", path, candidates)
 	for _, candidate := range candidates {
 		data, err := imp.readURI(candidate)
 		if err == nil {
-			logf("read-path-hit: path='%s' foundAt=%s", path, candidate.Filename())
+			tracef("read-path-hit: path='%s' foundAt=%s", path, candidate.Filename())
 			return jsonnet.MakeContentsRaw(data), candidate.Filename(), nil
 		}
 	}
@@ -227,47 +235,11 @@ func rangeToProto(r ast.LocationRange) protocol.Range {
 	return protocol.Range{Start: posToProto(r.Begin), End: posToProto(r.End)}
 }
 
-type ErrCollector struct {
-	URI   uri.URI
-	Diags []protocol.Diagnostic
-}
-
-func (e *ErrCollector) Format(err error) string {
-	e.Collect(err, protocol.DiagnosticSeverityWarning)
-	return err.Error()
-}
-
 // staticError shadows the staticError internal interface in go-jsonnet/internal/errors
 type staticError interface {
 	Error() string
 	Loc() ast.LocationRange
 }
-
-func (e *ErrCollector) Collect(err error, severity protocol.DiagnosticSeverity) {
-	switch err := err.(type) {
-	case staticError:
-		if err.Loc().FileName == e.URI.Filename() {
-			e.Diags = append(e.Diags, protocol.Diagnostic{
-				Severity: severity,
-				Range:    rangeToProto(err.Loc()),
-				Message:  err.Error(),
-				Source:   "jsonnet",
-			})
-		}
-	case jsonnet.RuntimeError:
-		e.Diags = append(e.Diags, protocol.Diagnostic{
-			Range:    rangeToProto(err.StackTrace[0].Loc),
-			Severity: protocol.DiagnosticSeverityError,
-			Source:   "jsonnet",
-			Message:  err.Msg,
-		})
-	default:
-		logf("unknown lint error type (%T): %+v", err, err)
-	}
-
-}
-func (e *ErrCollector) SetMaxStackTraceSize(size int)                  {}
-func (e *ErrCollector) SetColorFormatter(color jsonnet.ColorFormatter) {}
 
 type ErrDiscard struct{}
 
@@ -307,7 +279,7 @@ func (s *Server) getVM(uri uri.URI) *vmCache {
 		return s.vm
 	}
 
-	logf("flusing jsonnet vm cache (changed file to %s)", uri)
+	tracef("flusing jsonnet vm cache (changed file to %s)", uri)
 	vm := &vmCache{from: uri, vm: jsonnet.MakeVM()}
 	vm.vm.Importer(&cachedImporter{
 		notFound: map[[2]string]error{},
@@ -378,7 +350,7 @@ func tryRecoverAST(uri uri.URI, contents string, lastEdit *gotextdiff.TextEdit) 
 
 func parseJsonnetFn(uri uri.URI) overlay.ParseFunc {
 	return func(contents string, lastEdit *gotextdiff.TextEdit) (result interface{}, success bool) {
-		// defer func(t time.Time) { logf("parsed ast len=%d in %s", len(contents), time.Since(t)) }(time.Now())
+		defer func(t time.Time) { tracef("parsed ast uri=%s len=%d in %s", uri, len(contents), time.Since(t)) }(time.Now())
 		res := &ParseResult{}
 		res.Root, res.Err = jsonnet.SnippetToAST(uri.Filename(), contents)
 
@@ -391,31 +363,41 @@ func parseJsonnetFn(uri uri.URI) overlay.ParseFunc {
 }
 
 func (s *Server) processFileUpdateFn(ctx context.Context, uri uri.URI) overlay.UpdateFunc {
-	cvm := s.getVM(uri)
-	ec := &ErrCollector{URI: uri, Diags: []protocol.Diagnostic{}}
+	resv := &valueResolver{
+		rootURI:    uri,
+		rootAST:    nil,
+		roots:      map[string]ast.Node{},
+		stackCache: map[ast.Node][]ast.Node{},
+		getvm:      func() *vmCache { return s.getVM(uri) },
+	}
+
+	diags := []protocol.Diagnostic{}
 	return func(ur overlay.UpdateResult) {
-		// defer func(t time.Time) { logf("parsed done diags in %s", time.Since(t)) }(time.Now())
+		defer func(t time.Time) { tracef("linting %s done diags in %s", uri, time.Since(t)) }(time.Now())
 		if ur.Current == nil {
 			return
 		}
 
 		if pr, _ := ur.Current.Data.(*ParseResult); pr.StaticErr() != nil {
 			// AST failed to parse, do not run lints
-			ec.Collect(pr.StaticErr(), protocol.DiagnosticSeverityError)
+			se := pr.StaticErr()
+			diags = append(diags, protocol.Diagnostic{
+				Severity: protocol.DiagnosticSeverityError,
+				Range:    rangeToProto(se.Loc()),
+				Message:  se.Error(),
+				Source:   "jsonnet",
+			})
 		} else if ur.Parsed != nil && ur.Current.Version == ur.Parsed.Version {
 			// AST did parse, run linter
-			cvm.Use(func(vm *jsonnet.VM) {
-				vm.ErrorFormatter = ec
-				snippets := []linter.Snippet{{FileName: uri.Filename(), Code: ur.Parsed.Contents}}
-				linter.LintSnippet(vm, io.Discard, snippets)
-				vm.ErrorFormatter = ErrDiscard{}
-			})
+			resv.rootAST = ur.Parsed.Data.(*ParseResult).Root
+			resv.roots[resv.rootAST.Loc().FileName] = resv.rootAST
+			diags = append(diags, linter.LintAST(resv.rootAST, resv)...)
 		}
 
 		_ = s.notifier.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
 			URI:         uri,
 			Version:     uint32(ur.Current.Version),
-			Diagnostics: ec.Diags,
+			Diagnostics: diags,
 		})
 	}
 }
@@ -463,7 +445,7 @@ func (r *valueResolver) Vars(from ast.Node) analysis.VarMap {
 	}
 	root := r.roots[from.Loc().FileName]
 	if root == nil {
-		panic(fmt.Errorf("invariant: resolving var from %T where no root was imported", from))
+		panic(fmt.Errorf("invariant: resolving var from %s where no root was imported", analysis.FmtNode(from)))
 	}
 	if stk := r.stackCache[from]; len(stk) > 0 {
 		return analysis.StackVars(stk)

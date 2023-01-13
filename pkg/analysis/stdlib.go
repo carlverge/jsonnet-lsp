@@ -26,6 +26,36 @@ var StdLibFunctions = map[string]*Function{
 			{Name: "x", Type: AnyType},
 		},
 	},
+	"isObject": {
+		Comment:    []string{"Returns `true` if `x` is of type 'object'."},
+		ReturnType: BooleanType,
+		Params:     []Param{{Name: "x", Type: AnyType}},
+	},
+	"isNumber": {
+		Comment:    []string{"Returns `true` if `x` is of type 'number'."},
+		ReturnType: BooleanType,
+		Params:     []Param{{Name: "x", Type: AnyType}},
+	},
+	"isString": {
+		Comment:    []string{"Returns `true` if `x` is of type 'string'."},
+		ReturnType: BooleanType,
+		Params:     []Param{{Name: "x", Type: AnyType}},
+	},
+	"isBoolean": {
+		Comment:    []string{"Returns `true` if `x` is of type 'boolean'."},
+		ReturnType: BooleanType,
+		Params:     []Param{{Name: "x", Type: AnyType}},
+	},
+	"isArray": {
+		Comment:    []string{"Returns `true` if `x` is of type 'array'."},
+		ReturnType: BooleanType,
+		Params:     []Param{{Name: "x", Type: AnyType}},
+	},
+	"isFunction": {
+		Comment:    []string{"Returns `true` if `x` is of type 'function'."},
+		ReturnType: BooleanType,
+		Params:     []Param{{Name: "x", Type: AnyType}},
+	},
 	"length": {
 		Comment:    []string{"Depending on the type of the value given, either returns the number of elements in the\narray, the number of codepoints in the string, the number of parameters in the function, or\nthe number of fields in the object. Raises an error if given a primitive value, i.e.\n`null`, `true` or `false`."},
 		ReturnType: NumberType,

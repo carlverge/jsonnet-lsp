@@ -1,13 +1,16 @@
 # jsonnet-lsp
-Jsonnet Language Server
+
+This plugin aims to deliver a feature-rich, high quality, high performance IDE experience for Jsonnet. It is designed to work in large repositories with deeply nested imports.
 
 ## Features
 * Syntax Highliting and Basic Editing features
 * Snippets
-* Linting and Syntax Errors
+* Custom linting code that is able to deal with large codebases
+    * The analysis code is optimized for real-time linting, and can return in <5ms when the normal linter could take minutes.
 * Formatting
 * Delta text update support for efficient editing
 * Designed to remain performant in large repos with many files open
+* Automatic detection of `bazel-bin` for generated files
 * Type and Value Deduction
     * Supports imported files
     * Able to follow variables, function return values, and array/object indexing
@@ -23,6 +26,13 @@ Jsonnet Language Server
 * Function Signature Help
 * AST Recovery
     * The LSP is able recover common syntax issues while typing (like a missing semicolon) for a smoother experience
+
+## Missing Features
+These are features I consider pretty important that are still missing:
+* Live evaluation of jsonnet files (and split screen output viewing)
+* More type deduction logic and analysis
+* More IDE options (options for linting, jpath, etc)
+* First class multi-dimension jsonnet support
 
 ## Development
 

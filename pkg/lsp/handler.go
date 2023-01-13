@@ -91,7 +91,7 @@ func (s *Server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 }
 
 func (s *Server) DidChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
-	logf("did-change: uri=%s ver=%d changes=%d", params.TextDocument.URI, params.TextDocument.Version, len(params.ContentChanges))
+	tracef("did-change: uri=%s ver=%d changes=%d", params.TextDocument.URI, params.TextDocument.Version, len(params.ContentChanges))
 	s.overlay.Update(
 		params.TextDocument.URI,
 		int64(params.TextDocument.Version),
@@ -103,7 +103,7 @@ func (s *Server) DidChange(ctx context.Context, params *protocol.DidChangeTextDo
 }
 
 func (s *Server) DidSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) (err error) {
-	logf("did-save: uri=%s", params.TextDocument.URI)
+	tracef("did-save: uri=%s", params.TextDocument.URI)
 	return nil
 }
 
