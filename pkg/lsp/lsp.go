@@ -23,11 +23,13 @@ import (
 	"go.lsp.dev/uri"
 )
 
+const extJsonnet = ".jsonnet"
+
 func logf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "I%s]%s\n", time.Now().Format("0201 15:04:05.00000"), fmt.Sprintf(msg, args...))
 }
 
-var traceEnable = true
+var traceEnable = false
 
 func tracef(msg string, args ...interface{}) {
 	if traceEnable {
@@ -404,7 +406,7 @@ func (s *Server) processFileUpdateFn(ctx context.Context, uri uri.URI) overlay.U
 			// This is to avoid evaluations of obviously bad files, which will just
 			// burn CPU as the user is typing.
 			// Only eval .jsonnet files, as .libsonnet can have exports that cannot be materialized
-			if !linter.HasErrors(diags) && s.config.Diag.Evaluate && filepath.Ext(fname) == "jsonnet" {
+			if !linter.HasErrors(diags) && s.config.Diag.Evaluate && filepath.Ext(fname) == extJsonnet {
 				resv.getvm().Use(func(vm *jsonnet.VM) {
 					defer func(t time.Time) { tracef("evaluation %s done diags in %s", uri, time.Since(t)) }(time.Now())
 					_, err := vm.Evaluate(resv.rootAST)
