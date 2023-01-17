@@ -115,7 +115,7 @@ export async function activate(context: ExtensionContext) {
 			}).catch(err => window.showErrorMessage(`jsonnet: failed to evaluate file ${err}`));
 
 			previewProvider.previewDidChange(result.output);
-
+			
 			const doc = { ...(await workspace.openTextDocument(previewProvider.previewPaneURI)), languageId: "json" };
 			await window.showTextDocument(doc, ViewColumn.Beside, true);
 		})

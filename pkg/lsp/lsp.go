@@ -365,6 +365,9 @@ func parseJsonnetFn(uri uri.URI) overlay.ParseFunc {
 }
 
 func (s *Server) processFileUpdateFn(ctx context.Context, uri uri.URI) overlay.UpdateFunc {
+	// XXX: this is messy. In reality, there should probably be a cached
+	// resolver on the server for the URI (not just cached VM), as after the
+	// linter runs the ASTs and roots are populated just as the code needs.
 	resv := &valueResolver{
 		rootURI:    uri,
 		rootAST:    nil,
@@ -393,13 +396,15 @@ func (s *Server) processFileUpdateFn(ctx context.Context, uri uri.URI) overlay.U
 			// AST did parse, run linter
 			parseResult := ur.Parsed.Data.(*ParseResult)
 			resv.rootAST = parseResult.Root
-			resv.roots[resv.rootAST.Loc().FileName] = resv.rootAST
+			fname := resv.rootAST.Loc().FileName
+			resv.roots[fname] = resv.rootAST
 			diags = append(diags, linter.LintAST(resv.rootAST, resv)...)
 
 			// If the linter has detected no fatal errors, then evaluate the file.
 			// This is to avoid evaluations of obviously bad files, which will just
 			// burn CPU as the user is typing.
-			if !linter.HasErrors(diags) && s.config.Diag.Evaluate {
+			// Only eval .jsonnet files, as .libsonnet can have exports that cannot be materialized
+			if !linter.HasErrors(diags) && s.config.Diag.Evaluate && filepath.Ext(fname) == "jsonnet" {
 				resv.getvm().Use(func(vm *jsonnet.VM) {
 					defer func(t time.Time) { tracef("evaluation %s done diags in %s", uri, time.Since(t)) }(time.Now())
 					_, err := vm.Evaluate(resv.rootAST)
@@ -408,9 +413,7 @@ func (s *Server) processFileUpdateFn(ctx context.Context, uri uri.URI) overlay.U
 						return
 					}
 
-					// Grab the stack trace from the error, and highlight
-					// each line.
-					fname := resv.rootAST.Loc().FileName
+					// Grab the stack trace from the error, and highlight each line.
 					seenRootCause := false
 					for _, frame := range rterr.StackTrace {
 						if frame.Loc.FileName != fname {
