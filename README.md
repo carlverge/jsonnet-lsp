@@ -29,7 +29,6 @@ This plugin aims to deliver a feature-rich, high quality, high performance IDE e
 
 ## Missing Features
 These are features I consider pretty important that are still missing:
-* Live evaluation of jsonnet files (and split screen output viewing)
 * More type deduction logic and analysis
 * More IDE options (options for linting, jpath, etc)
 * First class multi-dimension jsonnet support

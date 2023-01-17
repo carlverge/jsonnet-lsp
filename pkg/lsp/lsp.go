@@ -45,6 +45,7 @@ type Server struct {
 	overlay  *overlay.Overlay
 	importer *OverlayImporter
 	vmlock   sync.Mutex
+	config   *Configuration
 
 	// intentionally only keep one active VM at once
 	// when an operation needs a full VM (f.ex if it needs to
@@ -81,6 +82,7 @@ func RunServer(ctx context.Context, stdout *os.File) error {
 		overlay:        overlay.NewOverlay(),
 		cancel:         cancel,
 		notifier:       notifier,
+		config:         &Configuration{},
 	}
 
 	handler := srv.Handler()
@@ -387,11 +389,52 @@ func (s *Server) processFileUpdateFn(ctx context.Context, uri uri.URI) overlay.U
 				Message:  se.Error(),
 				Source:   "jsonnet",
 			})
-		} else if ur.Parsed != nil && ur.Current.Version == ur.Parsed.Version {
+		} else if ur.Parsed != nil && s.config.Diag.Linter && ur.Current.Version == ur.Parsed.Version {
 			// AST did parse, run linter
-			resv.rootAST = ur.Parsed.Data.(*ParseResult).Root
+			parseResult := ur.Parsed.Data.(*ParseResult)
+			resv.rootAST = parseResult.Root
 			resv.roots[resv.rootAST.Loc().FileName] = resv.rootAST
 			diags = append(diags, linter.LintAST(resv.rootAST, resv)...)
+
+			// If the linter has detected no fatal errors, then evaluate the file.
+			// This is to avoid evaluations of obviously bad files, which will just
+			// burn CPU as the user is typing.
+			if !linter.HasErrors(diags) && s.config.Diag.Evaluate {
+				resv.getvm().Use(func(vm *jsonnet.VM) {
+					defer func(t time.Time) { tracef("evaluation %s done diags in %s", uri, time.Since(t)) }(time.Now())
+					_, err := vm.Evaluate(resv.rootAST)
+					rterr, ok := err.(jsonnet.RuntimeError)
+					if !ok {
+						return
+					}
+
+					// Grab the stack trace from the error, and highlight
+					// each line.
+					fname := resv.rootAST.Loc().FileName
+					seenRootCause := false
+					for _, frame := range rterr.StackTrace {
+						if frame.Loc.FileName != fname {
+							continue
+						}
+						// Each implicated line of the stack trace is a diagnostic to be highlighted.
+						// The most specific stack frame in this file is highlighted as an error
+						// to draw user attention to the clostest known root cause.
+						sev := protocol.DiagnosticSeverityError
+						if seenRootCause {
+							sev = protocol.DiagnosticSeverityWarning
+						}
+						seenRootCause = true
+
+						diags = append(diags, protocol.Diagnostic{
+							Range:    rangeToProto(frame.Loc),
+							Severity: sev,
+							Code:     "RuntimeError",
+							Source:   "jsonnet",
+							Message:  rterr.Msg,
+						})
+					}
+				})
+			}
 		}
 
 		_ = s.notifier.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{

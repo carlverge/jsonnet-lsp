@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"math"
@@ -10,12 +11,67 @@ import (
 	"strings"
 
 	"github.com/carlverge/jsonnet-lsp/pkg/analysis"
+	"github.com/google/go-jsonnet"
 	"github.com/google/go-jsonnet/ast"
 	"github.com/google/go-jsonnet/formatter"
 	"go.lsp.dev/jsonrpc2"
 	"go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
 )
+
+type Configuration struct {
+	Diag struct {
+		Linter   bool `json:"linter"`
+		Evaluate bool `json:"evaluate"`
+	} `json:"diag"`
+
+	Fmt struct {
+		Indent           int    `json:"indent"`
+		MaxBlankLines    int    `json:"maxBlankLines"`
+		StringStyle      string `json:"stringStyle"`
+		CommentStyle     string `json:"commentStyle"`
+		PrettyFieldNames bool   `json:"prettyFieldNames"`
+		PadArrays        bool   `json:"padArrays"`
+		PadObjects       bool   `json:"padObjects"`
+		SortImports      bool   `json:"sortImports"`
+		ImplicitPlus     bool   `json:"implicitPlus"`
+	} `json:"fmt"`
+}
+
+func (c *Configuration) FormatterOptions() formatter.Options {
+	if c == nil {
+		return formatter.DefaultOptions()
+	}
+
+	opts := formatter.Options{
+		Indent:           c.Fmt.Indent,
+		MaxBlankLines:    c.Fmt.MaxBlankLines,
+		PrettyFieldNames: c.Fmt.PrettyFieldNames,
+		PadArrays:        c.Fmt.PadArrays,
+		PadObjects:       c.Fmt.PadObjects,
+		SortImports:      c.Fmt.SortImports,
+		UseImplicitPlus:  c.Fmt.ImplicitPlus,
+	}
+	switch c.Fmt.StringStyle {
+	case "\"":
+		opts.StringStyle = formatter.StringStyleDouble
+	case "'":
+		opts.StringStyle = formatter.StringStyleSingle
+	default:
+		opts.StringStyle = formatter.StringStyleLeave
+	}
+
+	switch c.Fmt.CommentStyle {
+	case "#":
+		opts.CommentStyle = formatter.CommentStyleHash
+	case "//":
+		opts.CommentStyle = formatter.CommentStyleSlash
+	default:
+		opts.CommentStyle = formatter.CommentStyleLeave
+	}
+
+	return opts
+}
 
 func (s *Server) Handler() jsonrpc2.Handler {
 	serverHandler := protocol.ServerHandler(s, jsonrpc2.MethodNotFoundHandler)
@@ -51,11 +107,6 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 
 	logf("initialized with rootURI=%s searchURI=%v", s.rootURI, s.searchPaths)
 
-	_ = s.notifier.LogMessage(ctx, &protocol.LogMessageParams{
-		Message: "Jsonnet LSP Server Initialized",
-		Type:    protocol.MessageTypeLog,
-	})
-
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
 			TextDocumentSync: protocol.TextDocumentSyncOptions{
@@ -76,6 +127,20 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 			DefinitionProvider:         true,
 		},
 	}, nil
+}
+
+func (s *Server) DidChangeConfiguration(ctx context.Context, params *protocol.DidChangeConfigurationParams) (err error) {
+	logf("did change config: %+v", params.Settings)
+	data, _ := json.Marshal(params.Settings)
+	newcfg := &Configuration{}
+	if err := json.Unmarshal(data, newcfg); err != nil {
+		logf("failed to parse new configuration: %+v", err)
+		return nil
+	}
+	// Racy in the sense we could see an old pointer, but that is OK.
+	s.config = newcfg
+
+	return nil
 }
 
 func (s *Server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
@@ -201,7 +266,7 @@ var stdlibCompletions = func() (res []protocol.CompletionItem) {
 }()
 
 func (s *Server) Completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
-	res := &protocol.CompletionList{IsIncomplete: false, Items: nil}
+	res := &protocol.CompletionList{IsIncomplete: false, Items: []protocol.CompletionItem{}}
 	resolver := s.NewResolver(params.TextDocument.URI)
 	if resolver == nil {
 		return res, nil
@@ -350,22 +415,22 @@ func (s *Server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSy
 func (s *Server) SignatureHelp(ctx context.Context, params *protocol.SignatureHelpParams) (*protocol.SignatureHelp, error) {
 	resolver := s.NewResolver(params.TextDocument.URI)
 	if resolver == nil {
-		return &protocol.SignatureHelp{}, nil
+		return &protocol.SignatureHelp{Signatures: []protocol.SignatureInformation{}}, nil
 	}
 
 	node, _ := resolver.NodeAt(protoToPos(params.Position))
 	if node == nil {
-		return &protocol.SignatureHelp{}, nil
+		return &protocol.SignatureHelp{Signatures: []protocol.SignatureInformation{}}, nil
 	}
 
 	apply, ok := node.(*ast.Apply)
 	if !ok {
-		return &protocol.SignatureHelp{}, nil
+		return &protocol.SignatureHelp{Signatures: []protocol.SignatureInformation{}}, nil
 	}
 
 	targ := analysis.NodeToValue(apply.Target, resolver)
 	if targ.Function == nil {
-		return &protocol.SignatureHelp{}, nil
+		return &protocol.SignatureHelp{Signatures: []protocol.SignatureInformation{}}, nil
 	}
 
 	// for each positional param, the active is at least len(positional)
@@ -488,22 +553,76 @@ func (s *Server) Formatting(ctx context.Context, params *protocol.DocumentFormat
 		return []protocol.TextEdit{}, nil
 	}
 
-	fmtopts := formatter.Options{
-		Indent:           int(params.Options.TabSize),
-		MaxBlankLines:    1,
-		StringStyle:      formatter.StringStyleDouble,
-		CommentStyle:     formatter.CommentStyleSlash,
-		PrettyFieldNames: true,
-		SortImports:      true,
-		UseImplicitPlus:  true,
-		PadArrays:        false,
-		PadObjects:       true,
+	fname := params.TextDocument.URI.Filename()
+	opts := s.config.FormatterOptions()
+	if opts.Indent <= 0 {
+		opts.Indent = int(params.Options.TabSize)
 	}
 
-	out, err := formatter.Format(params.TextDocument.URI.Filename(), current.Contents, fmtopts)
+	out, err := formatter.Format(fname, current.Contents, opts)
 	if err != nil {
 		return []protocol.TextEdit{}, nil
 	}
 
 	return []protocol.TextEdit{{Range: protocol.Range{End: protocol.Position{Line: math.MaxUint32}}, NewText: string(out)}}, nil
+}
+
+type EvaluateParams struct {
+	TextDocument *protocol.TextDocumentIdentifier `json:"textDocument"`
+}
+
+type EvaluateResult struct {
+	Output string `json:"output"`
+}
+
+func formatRuntimeError(err error) string {
+	rt, ok := err.(jsonnet.RuntimeError)
+	if !ok {
+		return err.Error()
+	}
+	sb := strings.Builder{}
+	sb.WriteString(err.Error() + "\n")
+	for _, frame := range rt.StackTrace {
+		sb.WriteString(fmt.Sprintf("    %s: %s\n", frame.Loc.String(), frame.Name))
+	}
+	return sb.String()
+}
+
+func (s *Server) Evaluate(ctx context.Context, params *EvaluateParams) (*EvaluateResult, error) {
+	cvm := s.getVM(params.TextDocument.URI)
+	curAST := s.getCurrentAST(params.TextDocument.URI)
+	if cvm == nil || curAST == nil {
+		return nil, fmt.Errorf("cannot get jsonnet VM for file '%s'", params.TextDocument.URI.Filename())
+	}
+
+	result := &EvaluateResult{}
+	var err error
+	cvm.Use(func(vm *jsonnet.VM) {
+		result.Output, err = vm.Evaluate(curAST)
+		if err != nil {
+			result.Output = formatRuntimeError(err)
+		}
+	})
+	return result, nil
+}
+
+func (s *Server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (result interface{}, err error) {
+	if len(params.Arguments) != 1 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	argData, ok := params.Arguments[0].(string)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+
+	switch params.Command {
+	case "jsonnet.lsp.evaluate":
+		args := &EvaluateParams{}
+		if err := json.Unmarshal([]byte(argData), args); err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		return s.Evaluate(ctx, args)
+	}
+
+	return nil, jsonrpc2.ErrMethodNotFound
 }

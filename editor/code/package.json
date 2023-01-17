@@ -10,7 +10,7 @@
   "license": "Apache License Version 2.0",
   "description": "Jsonnet IDE Support. Autocomplete, lint, format, goto def, signature help.",
   "icon": "images/icon.png",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "engines": {
     "vscode": "^1.72.0"
   },
@@ -61,6 +61,10 @@
       {
 				"command": "jsonnet.lsp.restart",
 				"title": "Jsonnet: Restart Language Server"
+			},
+      {
+				"command": "jsonnet.lsp.evaluate",
+				"title": "Jsonnet: Evaluate Current File"
 			}
     ],
     "configuration": {
@@ -68,13 +72,86 @@
       "title": "Jsonnet",
       "properties": {
         "jsonnet.lsp.binaryPath": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "default": null,
+          "type": "string",
+          "default": "",
           "description": "Binary path for jsonnet language server. If not set, the bundled LSP will be used.",
           "scope": "resource"
+        },
+        "jsonnet.lsp.diag.linter": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Enable live linter diagnostics"
+        },
+        "jsonnet.lsp.diag.evaluate": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Enable live evaluation diagnostics"
+        },
+        "jsonnet.lsp.fmt.indent": {
+          "type": "number",
+          "default": 0,
+          "scope": "resource",
+          "description": "The number of spaces for each level of indenation. If zero, uses the editor default."
+        },
+        "jsonnet.lsp.fmt.maxBlankLines": {
+          "type": "number",
+          "default": 1,
+          "scope": "resource",
+          "description": "the max allowed number of consecutive blank lines"
+        },
+        "jsonnet.lsp.fmt.stringStyle": {
+          "type": "string",
+          "default": "\"",
+          "scope": "resource",
+          "description": "Change string quotes to this type when possible",
+          "enum": [
+            "\"",
+            "'",
+            "Leave Alone"
+          ]
+        },
+        "jsonnet.lsp.fmt.commentStyle": {
+          "type": "string",
+          "default": "//",
+          "scope": "resource",
+          "description": "Change comment style to this type when possible",
+          "enum": [
+            "#",
+            "//",
+            "Leave Alone"
+          ]
+        },
+        "jsonnet.lsp.fmt.prettyFieldNames": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "causes fields to only be wrapped in '' when needed"
+        },
+        "jsonnet.lsp.fmt.padArrays": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "causes arrays to be written like [ this ] instead of [this]"
+        },
+        "jsonnet.lsp.fmt.padObjects": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "causes objects to be written like { this } instead of {this}"
+        },
+        "jsonnet.lsp.fmt.sortImports": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "causes imports at the top of the file to be sorted in groups"
+        },
+        "jsonnet.lsp.fmt.implicitPlus": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "removes plus sign where it is not required"
         }
       }
     }

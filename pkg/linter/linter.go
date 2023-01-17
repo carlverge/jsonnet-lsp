@@ -23,6 +23,15 @@ func FmtDiag(diag protocol.Diagnostic) string {
 	)
 }
 
+func HasErrors(diags []protocol.Diagnostic) bool {
+	for _, d := range diags {
+		if d.Severity == protocol.DiagnosticSeverityError {
+			return true
+		}
+	}
+	return false
+}
+
 type Diagnostic = protocol.Diagnostic
 
 func posToProto(p ast.Location) protocol.Position {
