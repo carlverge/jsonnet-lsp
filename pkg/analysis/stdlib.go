@@ -704,6 +704,27 @@ var StdLibFunctions = map[string]*Function{
 			{Name: "rest", Type: AnyType},
 		},
 	},
+
+	// Mathematical Utilities
+	"abs":      {ReturnType: NumberType, Params: []Param{{Name: "n", Type: NumberType}}},
+	"sign":     {ReturnType: NumberType, Params: []Param{{Name: "n", Type: NumberType}}},
+	"max":      {ReturnType: NumberType, Params: []Param{{Name: "a", Type: NumberType}, {Name: "b", Type: NumberType}}},
+	"min":      {ReturnType: NumberType, Params: []Param{{Name: "a", Type: NumberType}, {Name: "b", Type: NumberType}}},
+	"pow":      {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}, {Name: "n", Type: NumberType}}},
+	"exp":      {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"log":      {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"exponent": {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"mantissa": {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"floor":    {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"ceil":     {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"sqrt":     {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"sin":      {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"cos":      {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"tan":      {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"asin":     {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"acos":     {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"atan":     {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
+	"round":    {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
 }
 
 var StdLibValue = func(fns map[string]*Function) *Value {
