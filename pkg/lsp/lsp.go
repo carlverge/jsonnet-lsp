@@ -23,13 +23,11 @@ import (
 	"go.lsp.dev/uri"
 )
 
-const extJsonnet = ".jsonnet"
-
 func logf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "I%s]%s\n", time.Now().Format("0201 15:04:05.00000"), fmt.Sprintf(msg, args...))
 }
 
-var traceEnable = false
+var traceEnable = true
 
 func tracef(msg string, args ...interface{}) {
 	if traceEnable {
@@ -47,7 +45,6 @@ type Server struct {
 	overlay  *overlay.Overlay
 	importer *OverlayImporter
 	vmlock   sync.Mutex
-	config   *Configuration
 
 	// intentionally only keep one active VM at once
 	// when an operation needs a full VM (f.ex if it needs to
@@ -58,6 +55,10 @@ type Server struct {
 	// memory usage low as we don't keep a VM in memory for every active
 	// file we're editing.
 	vm *vmCache
+
+	// set to true if the last edit to the document was a '.'
+	// used to change autocomplete behaviour
+	lastCharIsDot bool
 
 	cancel   context.CancelFunc
 	notifier protocol.Client
@@ -84,7 +85,6 @@ func RunServer(ctx context.Context, stdout *os.File) error {
 		overlay:        overlay.NewOverlay(),
 		cancel:         cancel,
 		notifier:       notifier,
-		config:         &Configuration{},
 	}
 
 	handler := srv.Handler()
@@ -312,6 +312,20 @@ func convChangeEvents(events []protocol.TextDocumentContentChangeEvent) []gotext
 	return res
 }
 
+func textEditToProto(edits []gotextdiff.TextEdit) []protocol.TextEdit {
+	res := make([]protocol.TextEdit, len(edits))
+	for i, ed := range edits {
+		res[i] = protocol.TextEdit{
+			Range: protocol.Range{
+				Start: protocol.Position{Line: uint32(ed.Span.Start().Line()) - 1, Character: uint32(ed.Span.Start().Column() - 1)},
+				End:   protocol.Position{Line: uint32(ed.Span.End().Line()) - 1, Character: uint32(ed.Span.End().Column() - 1)},
+			},
+			NewText: ed.NewText,
+		}
+	}
+	return res
+}
+
 type ParseResult struct {
 	Root ast.Node
 	Err  error
@@ -367,9 +381,6 @@ func parseJsonnetFn(uri uri.URI) overlay.ParseFunc {
 }
 
 func (s *Server) processFileUpdateFn(ctx context.Context, uri uri.URI) overlay.UpdateFunc {
-	// XXX: this is messy. In reality, there should probably be a cached
-	// resolver on the server for the URI (not just cached VM), as after the
-	// linter runs the ASTs and roots are populated just as the code needs.
 	resv := &valueResolver{
 		rootURI:    uri,
 		rootAST:    nil,
@@ -394,52 +405,11 @@ func (s *Server) processFileUpdateFn(ctx context.Context, uri uri.URI) overlay.U
 				Message:  se.Error(),
 				Source:   "jsonnet",
 			})
-		} else if ur.Parsed != nil && s.config.Diag.Linter && ur.Current.Version == ur.Parsed.Version {
+		} else if ur.Parsed != nil && ur.Current.Version == ur.Parsed.Version {
 			// AST did parse, run linter
-			parseResult := ur.Parsed.Data.(*ParseResult)
-			resv.rootAST = parseResult.Root
-			fname := resv.rootAST.Loc().FileName
-			resv.roots[fname] = resv.rootAST
+			resv.rootAST = ur.Parsed.Data.(*ParseResult).Root
+			resv.roots[resv.rootAST.Loc().FileName] = resv.rootAST
 			diags = append(diags, linter.LintAST(resv.rootAST, resv)...)
-
-			// If the linter has detected no fatal errors, then evaluate the file.
-			// This is to avoid evaluations of obviously bad files, which will just
-			// burn CPU as the user is typing.
-			// Only eval .jsonnet files, as .libsonnet can have exports that cannot be materialized
-			if !linter.HasErrors(diags) && s.config.Diag.Evaluate && filepath.Ext(fname) == extJsonnet {
-				resv.getvm().Use(func(vm *jsonnet.VM) {
-					defer func(t time.Time) { tracef("evaluation %s done diags in %s", uri, time.Since(t)) }(time.Now())
-					_, err := vm.Evaluate(resv.rootAST)
-					rterr, ok := err.(jsonnet.RuntimeError)
-					if !ok {
-						return
-					}
-
-					// Grab the stack trace from the error, and highlight each line.
-					seenRootCause := false
-					for _, frame := range rterr.StackTrace {
-						if frame.Loc.FileName != fname {
-							continue
-						}
-						// Each implicated line of the stack trace is a diagnostic to be highlighted.
-						// The most specific stack frame in this file is highlighted as an error
-						// to draw user attention to the clostest known root cause.
-						sev := protocol.DiagnosticSeverityError
-						if seenRootCause {
-							sev = protocol.DiagnosticSeverityWarning
-						}
-						seenRootCause = true
-
-						diags = append(diags, protocol.Diagnostic{
-							Range:    rangeToProto(frame.Loc),
-							Severity: sev,
-							Code:     "RuntimeError",
-							Source:   "jsonnet",
-							Message:  rterr.Msg,
-						})
-					}
-				})
-			}
 		}
 
 		_ = s.notifier.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
