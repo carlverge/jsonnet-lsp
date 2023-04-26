@@ -312,20 +312,6 @@ func convChangeEvents(events []protocol.TextDocumentContentChangeEvent) []gotext
 	return res
 }
 
-func textEditToProto(edits []gotextdiff.TextEdit) []protocol.TextEdit {
-	res := make([]protocol.TextEdit, len(edits))
-	for i, ed := range edits {
-		res[i] = protocol.TextEdit{
-			Range: protocol.Range{
-				Start: protocol.Position{Line: uint32(ed.Span.Start().Line()) - 1, Character: uint32(ed.Span.Start().Column() - 1)},
-				End:   protocol.Position{Line: uint32(ed.Span.End().Line()) - 1, Character: uint32(ed.Span.End().Column() - 1)},
-			},
-			NewText: ed.NewText,
-		}
-	}
-	return res
-}
-
 type ParseResult struct {
 	Root ast.Node
 	Err  error
