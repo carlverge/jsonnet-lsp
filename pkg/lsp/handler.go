@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,6 @@ import (
 	"github.com/carlverge/jsonnet-lsp/pkg/analysis"
 	"github.com/google/go-jsonnet/ast"
 	"github.com/google/go-jsonnet/formatter"
-	"github.com/hexops/gotextdiff/myers"
-	"github.com/hexops/gotextdiff/span"
 	"go.lsp.dev/jsonrpc2"
 	"go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
@@ -514,7 +513,6 @@ func (s *Server) Formatting(ctx context.Context, params *protocol.DocumentFormat
 	if err != nil {
 		return []protocol.TextEdit{}, nil
 	}
-	edits := myers.ComputeEdits(span.URI(""), current.Contents, out)
 
-	return textEditToProto(edits), nil
+	return []protocol.TextEdit{{Range: protocol.Range{End: protocol.Position{Line: math.MaxInt32}}, NewText: string(out)}}, nil
 }
