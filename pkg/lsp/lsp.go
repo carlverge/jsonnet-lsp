@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"strings"
 	"context"
 	"errors"
 	"fmt"
@@ -106,23 +107,39 @@ func RunServer(ctx context.Context, stdout *os.File) error {
 	return nil
 }
 
-func findRootDirectory(params *protocol.InitializeParams) uri.URI {
+func rootDirectoryFrom(params *protocol.InitializeParams) string {
 	for _, f := range params.WorkspaceFolders {
-		return uri.URI(f.URI)
+		return f.URI
 	}
 
 	//lint:ignore SA1019 backwards compat
 	if params.RootURI != "" {
 		//lint:ignore SA1019 backwards compat
-		return params.RootURI
+		return string(params.RootURI)
 	}
 	//lint:ignore SA1019 backwards compat
 	if params.RootPath != "" {
 		//lint:ignore SA1019 backwards compat
-		return uri.File(params.RootPath)
+		return params.RootPath
 	}
 	cwd, _ := os.Getwd()
-	return uri.File(cwd)
+	return cwd
+}
+
+func findRootDirectory(params *protocol.InitializeParams) uri.URI {
+	rootDir := rootDirectoryFrom(params)
+
+	// The IntelliJ Bazel Plugin generates an artificial .ijwb project directory
+	// inside the actual project root.
+	// https://blog.bazel.build/2019/09/29/intellij-bazel-sync.html
+	bazelDirs := []string{"/.ijwb", "/.aswb", "/.clwb"}
+	for _, bazelDir := range bazelDirs {
+		if strings.Contains(rootDir, bazelDir) {
+			rootDir = strings.Replace(rootDir, bazelDir, "", 1)
+			break
+		}
+	}
+	return uri.URI(rootDir)
 }
 
 // cachedImporter will keep the file contents
