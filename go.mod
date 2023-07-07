@@ -18,11 +18,11 @@ require (
 	go.uber.org/zap v1.21.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	sigs.k8s.io/yaml v1.1.0 // indirect
+	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
 require (
-	github.com/google/go-jsonnet v0.19.1
+	github.com/google/go-jsonnet v0.20.0
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.3.4 // indirect

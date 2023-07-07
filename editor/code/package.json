@@ -10,9 +10,9 @@
   "license": "Apache License Version 2.0",
   "description": "Jsonnet IDE Support. Autocomplete, lint, format, goto def, signature help.",
   "icon": "images/icon.png",
-  "version": "0.1.11",
+  "version": "0.2.1",
   "engines": {
-    "vscode": "^1.72.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Programming Languages",
@@ -24,11 +24,14 @@
     "onLanguage:jsonnet"
   ],
   "keywords": [
-		"jsonnet",
-		"lsp"
-	],
+    "jsonnet",
+    "lsp"
+  ],
   "main": "./out/extension.js",
-  "extensionKind": ["workspace", "ui"],
+  "extensionKind": [
+    "workspace",
+    "ui"
+  ],
   "contributes": {
     "languages": [
       {
@@ -46,26 +49,26 @@
     ],
     "snippets": [
       {
-          "language": "jsonnet",
-          "path": "./syntax/snippets.json"
+        "language": "jsonnet",
+        "path": "./syntax/snippets.json"
       }
     ],
     "grammars": [
-        {
-            "language": "jsonnet",
-            "scopeName": "source.jsonnet",
-            "path": "./syntax/jsonnet.tmLanguage.json"
-        }
+      {
+        "language": "jsonnet",
+        "scopeName": "source.jsonnet",
+        "path": "./syntax/jsonnet.tmLanguage.json"
+      }
     ],
     "commands": [
       {
-				"command": "jsonnet.lsp.restart",
-				"title": "Jsonnet: Restart Language Server"
-			},
+        "command": "jsonnet.lsp.restart",
+        "title": "Jsonnet: Restart Language Server"
+      },
       {
-				"command": "jsonnet.lsp.evaluate",
-				"title": "Jsonnet: Evaluate Current File"
-			}
+        "command": "jsonnet.lsp.evaluate",
+        "title": "Jsonnet: Evaluate Current File"
+      }
     ],
     "configuration": {
       "type": "object",
@@ -91,13 +94,13 @@
         },
         "jsonnet.lsp.fmt.indent": {
           "type": "number",
-          "default": 0,
+          "default": 2,
           "scope": "resource",
           "description": "The number of spaces for each level of indenation. If zero, uses the editor default."
         },
         "jsonnet.lsp.fmt.maxBlankLines": {
           "type": "number",
-          "default": 1,
+          "default": 2,
           "scope": "resource",
           "description": "the max allowed number of consecutive blank lines"
         },
@@ -143,13 +146,13 @@
         },
         "jsonnet.lsp.fmt.sortImports": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "scope": "resource",
           "description": "causes imports at the top of the file to be sorted in groups"
         },
         "jsonnet.lsp.fmt.implicitPlus": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "scope": "resource",
           "description": "removes plus sign where it is not required"
         }
@@ -159,20 +162,20 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -b ./",
-    "watch": "tsc -watch -b ./",
+    "watch": "tsc -b -watch ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"
   },
   "dependencies": {
-    "@types/vscode": "^1.69.0",
-		"vscode-languageclient": "^8.0.0"
+    "@types/vscode": "^1.75.0",
+    "vscode-languageclient": "^8.0.0"
   },
   "devDependencies": {
     "@types/node": "^12.12.0",
-		"@typescript-eslint/eslint-plugin": "^4.23.0",
-		"@typescript-eslint/parser": "^4.23.0",
-		"eslint": "^7.26.0",
-		"typescript": "^4.4.3"
+    "@typescript-eslint/eslint-plugin": "^4.23.0",
+    "@typescript-eslint/parser": "^4.23.0",
+    "eslint": "^7.26.0",
+    "typescript": "^4.4.3"
   }
 }

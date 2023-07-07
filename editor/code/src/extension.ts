@@ -81,6 +81,10 @@ export async function activate(context: ExtensionContext) {
 	await startClient(binaryPath, cfg);
 
 	context.subscriptions.push(
+		workspace.onDidChangeConfiguration(async () => {
+			const newcfg = workspace.getConfiguration('jsonnet.lsp');
+			client.sendNotification(DidChangeConfigurationNotification.type, {settings: newcfg});
+		}),
 		commands.registerCommand('jsonnet.lsp.restart', async function (): Promise<void> {
 			if (client.isRunning()) {
 				await client.stop();
