@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"sort"
@@ -18,6 +19,14 @@ func logf(msg string, args ...interface{}) {
 
 func LogNodeTrace(n ast.Node, indentLevel int) {
 	logf("%s", FmtNodeIndent(n, indentLevel))
+}
+
+func PrintAst(root ast.Node, out io.Writer) {
+	walkStack(root, nil, func(n ast.Node, stk []ast.Node) bool {
+		out.Write([]byte(FmtNodeIndent(n, len(stk)*2)))
+		out.Write([]byte{'\n'})
+		return true
+	})
 }
 
 func LogAst(root ast.Node) {
@@ -207,14 +216,21 @@ type Var struct {
 	Name string
 	Loc  ast.LocationRange
 	Node ast.Node
-	Type ValueType
+	// Type ValueType
+	Type     TypeInfo
+	TypeHint *TypeInfo
 	// The position in the stack, used for sorting most
 	// relevant autocomplete responses.
 	StackPos int
+	// If the Node is a function, then this variable is
+	// coming from a parameter. This is the position of
+	// the referenced parameter.
+	ParamFn  *ast.Function
+	ParamPos int
 }
 
 func StackVars(stk []ast.Node) VarMap {
-	res := map[string]*Var{"std": {Name: "std", StackPos: 0, Type: ObjectType}}
+	res := map[string]*Var{"std": {Name: "std", StackPos: 0, Type: TypeInfo{ValueType: ObjectType}}}
 	var firstObject *ast.DesugaredObject
 	for pos, n := range stk {
 		switch n := n.(type) {
@@ -226,7 +242,7 @@ func StackVars(stk []ast.Node) VarMap {
 					Name:     name,
 					Loc:      b.LocRange,
 					Node:     b.Body,
-					Type:     tp,
+					Type:     TypeInfo{ValueType: tp},
 					StackPos: pos,
 				}
 			}
@@ -238,28 +254,33 @@ func StackVars(stk []ast.Node) VarMap {
 					Name:     name,
 					Loc:      b.LocRange,
 					Node:     b.Body,
-					Type:     tp,
+					Type:     TypeInfo{ValueType: tp},
 					StackPos: pos,
 				}
 			}
 			if firstObject == nil {
 				firstObject = n
 			}
-			res["self"] = &Var{Name: "self", Loc: n.LocRange, Node: n, Type: ObjectType}
+			res["self"] = &Var{Name: "self", Loc: n.LocRange, Node: n, Type: TypeInfo{ValueType: ObjectType}}
 		case *ast.Function:
-			for _, p := range n.Parameters {
+			for idx, p := range n.Parameters {
+				_ = paramComments(idx, n, p)
 				name := string(p.Name)
 				res[name] = &Var{
-					Name:     name,
-					Loc:      p.LocRange,
-					Node:     p.DefaultArg,
+					Name: name,
+					Loc:  p.LocRange,
+					Node: n,
+					// TypeHint: typeHintCommentsToInfo(n, nil, paramTypeComments(idx, n, p)),
+					// Type:     commentsToType(comments),
 					StackPos: pos,
+					ParamFn:  n,
+					ParamPos: idx,
 				}
 			}
 		}
 	}
 	if firstObject != nil {
-		res["$"] = &Var{Name: "$", Loc: firstObject.LocRange, Node: firstObject, Type: ObjectType, StackPos: 1}
+		res["$"] = &Var{Name: "$", Loc: firstObject.LocRange, Node: firstObject, Type: TypeInfo{ValueType: ObjectType}, StackPos: 1}
 	}
 	return VarMap(res)
 }

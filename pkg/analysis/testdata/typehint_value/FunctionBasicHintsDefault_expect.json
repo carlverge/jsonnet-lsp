@@ -1,0 +1,24 @@
+{
+    "valueType": "function",
+    "function": {
+        "params": [
+            {
+                "name": "a",
+                "type": "any",
+                "typeHint": {
+                    "valueType": "string"
+                }
+            },
+            {
+                "name": "b",
+                "type": "any",
+                "typeHint": {
+                    "valueType": "null"
+                }
+            }
+        ],
+        "returnType": {
+            "valueType": "null"
+        }
+    }
+}

@@ -1,0 +1,54 @@
+{
+    "valueType": "function",
+    "function": {
+        "params": [
+            {
+                "name": "fn",
+                "type": "any",
+                "typeHint": {
+                    "valueType": "function",
+                    "function": {
+                        "params": [
+                            {
+                                "name": "elem",
+                                "type": "any",
+                                "typeHint": {
+                                    "valueType": "typeparam",
+                                    "typeParam": "A"
+                                }
+                            }
+                        ],
+                        "returnType": {
+                            "valueType": "any"
+                        },
+                        "returnHint": {
+                            "valueType": "typeparam",
+                            "typeParam": "B"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "arr",
+                "type": "any",
+                "typeHint": {
+                    "valueType": "array",
+                    "element": {
+                        "valueType": "typeparam",
+                        "typeParam": "A"
+                    }
+                }
+            }
+        ],
+        "returnType": {
+            "valueType": "null"
+        },
+        "returnHint": {
+            "valueType": "array",
+            "element": {
+                "valueType": "typeparam",
+                "typeParam": "B"
+            }
+        }
+    }
+}

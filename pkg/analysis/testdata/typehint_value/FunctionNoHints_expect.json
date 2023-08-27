@@ -1,0 +1,22 @@
+{
+    "valueType": "function",
+    "function": {
+        "params": [
+            {
+                "name": "a",
+                "type": "any"
+            },
+            {
+                "name": "b",
+                "type": "any"
+            },
+            {
+                "name": "c",
+                "type": "any"
+            }
+        ],
+        "returnType": {
+            "valueType": "number"
+        }
+    }
+}

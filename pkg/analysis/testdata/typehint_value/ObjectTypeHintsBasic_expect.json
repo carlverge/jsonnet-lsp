@@ -1,0 +1,35 @@
+{
+    "valueType": "object",
+    "object": {
+        "fields": [
+            {
+                "name": "a",
+                "type": {
+                    "valueType": "null"
+                },
+                "typeHint": {
+                    "valueType": "array",
+                    "element": {
+                        "valueType": "string"
+                    }
+                }
+            },
+            {
+                "name": "b",
+                "type": {
+                    "valueType": "null"
+                },
+                "typeHint": {
+                    "valueType": "number"
+                }
+            },
+            {
+                "name": "f1",
+                "type": {
+                    "valueType": "function"
+                }
+            }
+        ],
+        "allFieldsKnown": true
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "valueType": "function",
+    "function": {
+      "params": [
+        {
+          "name": "a",
+          "type": "any",
+          "typeHint": {
+            "valueType": "number"
+          }
+        }
+      ],
+      "returnType": {
+        "valueType": "any"
+      },
+      "returnHint": {
+        "valueType": "boolean"
+      }
+    }
+  }

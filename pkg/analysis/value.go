@@ -5,20 +5,23 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/carlverge/jsonnet-lsp/pkg/analysis/annotation"
 	"github.com/google/go-jsonnet/ast"
 )
 
 type ValueType int
 
 const (
-	AnyType      ValueType = 0
-	FunctionType ValueType = 1
-	ObjectType   ValueType = 2
-	ArrayType    ValueType = 3
-	BooleanType  ValueType = 4
-	NumberType   ValueType = 5
-	StringType   ValueType = 6
-	NullType     ValueType = 7
+	AnyType           ValueType = 0
+	FunctionType      ValueType = 1
+	ObjectType        ValueType = 2
+	ArrayType         ValueType = 3
+	BooleanType       ValueType = 4
+	NumberType        ValueType = 5
+	StringType        ValueType = 6
+	NullType          ValueType = 7
+	TypeParameterType ValueType = 8
+	UnionType         ValueType = 9
 )
 
 func NewValueType(v string) (ValueType, bool) {
@@ -37,6 +40,8 @@ func NewValueType(v string) (ValueType, bool) {
 		return NumberType, true
 	case "string":
 		return StringType, true
+	case "union":
+		return UnionType, false
 	case "null":
 		return NullType, true
 	default:
@@ -62,17 +67,26 @@ func (v ValueType) String() string {
 		return "string"
 	case NullType:
 		return "null"
+	case UnionType:
+		return "union"
+	case TypeParameterType:
+		return "typeparam"
 	default:
 		return "<invalid value type>"
 	}
 }
 
+func (v ValueType) MarshalText() ([]byte, error) {
+	return []byte(v.String()), nil
+}
+
 type Param struct {
-	Name    string            `json:"name"`
-	Comment []string          `json:"comment,omitempty"`
-	Range   ast.LocationRange `json:"-"`
-	Type    ValueType         `json:"type"`
-	Default ast.Node          `json:"-"`
+	Name     string            `json:"name"`
+	Comment  []string          `json:"-"`
+	Range    ast.LocationRange `json:"-"`
+	Type     ValueType         `json:"type"`
+	Default  ast.Node          `json:"-"`
+	TypeHint *TypeInfo         `json:"typeHint,omitempty"`
 }
 
 func (p *Param) String() string {
@@ -87,10 +101,12 @@ func (p *Param) String() string {
 }
 
 type Function struct {
-	Comment    []string  `json:"comment,omitempty"`
-	Params     []Param   `json:"params,omitempty"`
-	Return     ast.Node  `json:"-"`
-	ReturnType ValueType `json:"returnType"`
+	Comment []string `json:"-"`
+	Params  []Param  `json:"params,omitempty"`
+	Return  ast.Node `json:"-"`
+	// ReturnType ValueType `json:"returnType"`
+	ReturnType TypeInfo  `json:"returnType,omitempty"`
+	ReturnHint *TypeInfo `json:"returnHint,omitempty"`
 }
 
 func (f *Function) String() string {
@@ -102,35 +118,56 @@ func (f *Function) String() string {
 		params[i] = f.Params[i].String()
 	}
 	res := fmt.Sprintf("(%s)", strings.Join(params, ", "))
-	if f.ReturnType != AnyType {
-		res += " -> " + f.ReturnType.String()
+	if f.ReturnType.ValueType != AnyType {
+		res += " -> " + f.ReturnType.ValueType.String()
 	}
 	return res
 }
 
 type Field struct {
-	Name    string            `json:"name,omitempty"`
-	Type    ValueType         `json:"type"`
-	Range   ast.LocationRange `json:"-"`
-	Comment []string          `json:"comment,omitempty"`
-	Hidden  bool              `json:"hidden,omitempty"`
-	Node    ast.Node          `json:"-"`
+	Name     string            `json:"name,omitempty"`
+	Type     TypeInfo          `json:"type"`
+	TypeHint *TypeInfo         `json:"typeHint,omitempty"`
+	Range    ast.LocationRange `json:"-"`
+	Comment  []string          `json:"-"`
+	Hidden   bool              `json:"hidden,omitempty"`
+	Node     ast.Node          `json:"-"`
 }
 
 type Object struct {
-	Fields         []Field           `json:"fields"`
+	Fields         []Field           `json:"fields,omitempty"`
 	FieldMap       map[string]*Field `json:"-"`
 	AllFieldsKnown bool              `json:"allFieldsKnown"`
+	Supers         []*Value          `json:"supers,omitempty"`
+}
+
+func (o *Object) GetField(name string) *Field {
+	if o.FieldMap != nil {
+		if v, ok := o.FieldMap[name]; ok {
+			return v
+		}
+	}
+	// check supers in reverse order
+	for i := len(o.Supers) - 1; i >= 0; i-- {
+		if o.Supers[i].Type.Object != nil && o.Supers[i].Type.Object.FieldMap != nil {
+			if v, ok := o.Supers[i].Type.Object.FieldMap[name]; ok {
+				return v
+			}
+		}
+	}
+	return nil
 }
 
 type Value struct {
-	Type    ValueType         `json:"type"`
 	Range   ast.LocationRange `json:"-"`
-	Comment []string          `json:"comment,omitempty"`
+	Comment []string          `json:"-"`
 	Node    ast.Node          `json:"-"`
 
-	Object   *Object   `json:"object,omitempty"`
-	Function *Function `json:"function,omitempty"`
+	// distinction between what we infer from the values, and what the hint says
+	Type TypeInfo
+	// this can be propogated from other hints
+	// like from a return hint or from an object field
+	TypeHint *TypeInfo
 }
 
 func foddersToComment(node ast.Node, fodders ...ast.Fodder) []string {
@@ -161,69 +198,119 @@ func commentsToType(comments []string) ValueType {
 	return AnyType
 }
 
-func functionToValue(node *ast.Function) *Value {
-	res := &Value{
-		Type:     FunctionType,
-		Range:    node.LocRange,
-		Node:     node,
-		Comment:  foddersToComment(node, node.ParenLeftFodder, node.ParenRightFodder),
-		Function: &Function{Params: make([]Param, len(node.Parameters))},
+func paramTypeHintComment(idx int, node *ast.Function, param ast.Parameter, resolver Resolver) (*TypeInfo, error) {
+	var comments []string
+	if param.DefaultArg != nil {
+		comments = foddersToComment(nil, param.EqFodder)
+	} else if idx == len(node.Parameters)-1 {
+		comments = foddersToComment(nil, node.ParenRightFodder)
+	} else {
+		comments = foddersToComment(nil, param.CommaFodder)
 	}
-	_, res.Function.Return = UnwindLocals(node.Body)
-	res.Function.ReturnType, _ = simpleToValueType(res.Function.Return)
+
+	tc, ok := isTypeDeclComments(comments)
+	if !ok {
+		return nil, nil
+	}
+
+	decl, err := annotation.Parse(tc)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := annotationNodeToTypeDecl(node, decl, resolver)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func paramTypeComments(idx int, node *ast.Function) []string {
+	if node.Parameters[idx].DefaultArg != nil {
+		return foddersToComment(nil, node.Parameters[idx].EqFodder)
+	} else if idx == len(node.Parameters)-1 {
+		return foddersToComment(nil, node.ParenRightFodder)
+	}
+	return foddersToComment(nil, node.Parameters[idx].CommaFodder)
+}
+
+func paramComments(idx int, node *ast.Function, param ast.Parameter) []string {
+	var comments []string
+	if idx+1 == len(node.Parameters) {
+		comments = foddersToComment(param.DefaultArg, param.NameFodder, param.EqFodder, node.ParenRightFodder)
+	} else {
+		comments = foddersToComment(param.DefaultArg, param.NameFodder, param.EqFodder, param.CommaFodder)
+	}
+	return comments
+}
+
+func functionToValue(node *ast.Function, resolver Resolver) *Value {
+	res := &Value{
+		Type: TypeInfo{
+			ValueType: FunctionType,
+			Function: &Function{
+				Params:     make([]Param, len(node.Parameters)),
+				ReturnHint: typeHintCommentsToInfo(node, resolver, foddersToComment(node.Body)),
+			},
+		},
+		Range:   node.LocRange,
+		Node:    node,
+		Comment: foddersToComment(node, node.ParenLeftFodder, node.ParenRightFodder),
+	}
+
+	_, res.Type.Function.Return = UnwindLocals(node.Body)
+	res.Type.Function.ReturnType.ValueType, _ = simpleToValueType(res.Type.Function.Return)
 
 	for i, param := range node.Parameters {
-		var comments []string
-		if i+1 == len(node.Parameters) {
-			comments = foddersToComment(param.DefaultArg, param.NameFodder, param.EqFodder, node.ParenRightFodder)
-		} else {
-			comments = foddersToComment(param.DefaultArg, param.NameFodder, param.EqFodder, param.CommaFodder)
-		}
-
-		res.Function.Params[i] = Param{
+		res.Type.Function.Params[i] = Param{
 			Name:    string(param.Name),
 			Default: param.DefaultArg,
 			Range:   param.LocRange,
-			Comment: comments,
-			Type:    commentsToType(comments),
+			Comment: paramComments(i, node, param),
+			// Type:     commentsToType(comments),
+			TypeHint: typeHintCommentsToInfo(node, resolver, paramTypeComments(i, node)),
 		}
 	}
+	// For functions, copy the type into the hint as they're the same thing
+	res.TypeHint = &res.Type
 
 	return res
 }
 
-func objectToValue(node *ast.DesugaredObject) *Value {
+func objectToValue(node *ast.DesugaredObject, resolver Resolver) *Value {
 	res := &Value{
-		Type:    ObjectType,
+		Type: TypeInfo{
+			ValueType: ObjectType,
+			Object: &Object{
+				FieldMap:       map[string]*Field{},
+				AllFieldsKnown: true,
+			},
+		},
 		Range:   node.LocRange,
 		Node:    node,
 		Comment: foddersToComment(node, node.Fodder),
-		Object: &Object{
-			FieldMap: map[string]*Field{},
-		},
 	}
 
-	unknownFields := false
 	for _, fld := range node.Fields {
 		nt, ok := fld.Name.(*ast.LiteralString)
 		if !ok {
-			logf("unknown fld name: %T %v", fld.Name, fld.Name)
-			unknownFields = true
+			// logf("unknown fld name: %T %v", fld.Name, fld.Name)
+			res.Type.Object.AllFieldsKnown = false
 			continue
 		}
 
 		ft, _ := simpleToValueType(fld.Body)
-		res.Object.Fields = append(res.Object.Fields, Field{
-			Name:    nt.Value,
-			Type:    ft,
-			Comment: foddersToComment(fld.Body, nt.Fodder), // XXX: Name comments?
-			Range:   fld.LocRange,
-			Node:    fld.Body,
-			Hidden:  fld.Hide == ast.ObjectFieldHidden,
+		res.Type.Object.Fields = append(res.Type.Object.Fields, Field{
+			Name:     nt.Value,
+			Type:     TypeInfo{ValueType: ft},
+			TypeHint: typeHintCommentsToInfo(fld.Body, resolver, foddersToComment(fld.Body)),
+			Comment:  foddersToComment(fld.Body, nt.Fodder), // XXX: Name comments?
+			Range:    fld.LocRange,
+			Node:     fld.Body,
+			Hidden:   fld.Hide == ast.ObjectFieldHidden,
 		})
-		res.Object.FieldMap[nt.Value] = &(res.Object.Fields[len(res.Object.Fields)-1])
+		res.Type.Object.FieldMap[nt.Value] = &(res.Type.Object.Fields[len(res.Type.Object.Fields)-1])
 	}
-	res.Object.AllFieldsKnown = !unknownFields
 
 	return res
 }
@@ -238,7 +325,7 @@ func importToValue(node *ast.Import, resolver Resolver) *Value {
 		return NodeToValue(ret, resolver)
 	}
 
-	return &Value{Type: AnyType, Range: node.LocRange}
+	return &Value{Type: TypeInfo{ValueType: AnyType}, Range: node.LocRange}
 }
 
 var intrinsicFuncValueMapping = map[string]map[string]ValueType{
@@ -313,38 +400,47 @@ func knownApply(app *ast.Apply) (ValueType, bool) {
 
 func defaultToValue(node ast.Node) *Value {
 	res := &Value{Comment: foddersToComment(node)}
-	res.Type, _ = simpleToValueType(node)
+	res.Type.ValueType, _ = simpleToValueType(node)
 	if node.Loc() != nil {
 		res.Range = *node.Loc()
 	}
 	return res
 }
 
-func mergeObjectValues(lhs, rhs *Value) *Value {
-	// make a new value object
-	res := &Value{
-		Type:    ObjectType,
-		Range:   rhs.Range,
-		Comment: rhs.Comment,
-		Node:    rhs.Node,
-		Object: &Object{
-			FieldMap:       map[string]*Field{},
-			AllFieldsKnown: lhs.Object.AllFieldsKnown && rhs.Object.AllFieldsKnown,
-		},
-	}
-	for name, fld := range lhs.Object.FieldMap {
-		// add only if not in the RHS
-		if rhv := rhs.Object.FieldMap[name]; rhv == nil {
-			res.Object.Fields = append(res.Object.Fields, *fld)
-			res.Object.FieldMap[name] = fld
-		}
-	}
-	for name, fld := range rhs.Object.FieldMap {
-		res.Object.Fields = append(res.Object.Fields, *fld)
-		res.Object.FieldMap[name] = fld
-	}
-	return res
-}
+// func mergeObjectValues(lhs, rhs *Value) *Value {
+// make a new value object
+// res := &Value{
+// 	Type:    ObjectType,
+// 	Range:   rhs.Range,
+// 	Comment: rhs.Comment,
+// 	Node:    rhs.Node,
+// 	Object: &Object{
+// 		FieldMap:       map[string]*Field{},
+// 		AllFieldsKnown: lhs.Object != nil && rhs.Object != nil && lhs.Object.AllFieldsKnown && rhs.Object.AllFieldsKnown,
+// 	},
+// }
+
+// if lhs.Object != nil {
+// 	for name, fld := range lhs.Object.FieldMap {
+// 		// add only if not in the RHS
+// 		if rhs.Object == nil || rhs.Object.FieldMap[name] == nil {
+// 			res.Object.Fields = append(res.Object.Fields, *fld)
+// 			res.Object.FieldMap[name] = fld
+// 		}
+// 	}
+// }
+
+// if rhs.Object != nil {
+// 	for name, fld := range rhs.Object.FieldMap {
+// 		res.Object.Fields = append(res.Object.Fields, *fld)
+// 		res.Object.FieldMap[name] = fld
+// 	}
+// }
+
+// rhs.
+
+// return res
+// }
 
 type Resolver interface {
 	// Gets the variable with name `name` the ast node `from`
@@ -356,6 +452,9 @@ type Resolver interface {
 }
 
 func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
+	defer func() {
+		logf("value => node{%s} hint{%s} infer{%s}", FmtNode(node), res.TypeHint.String(), res.Type.String())
+	}()
 	// short circuit the more complicated logic if it's a known leaf value
 	// that cannot have more complex values
 	if _, isLeaf := simpleToValueType(node); isLeaf {
@@ -365,28 +464,28 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 	switch node := node.(type) {
 	case *ast.Array:
 		return &Value{
-			Type:    ArrayType,
+			Type:    TypeInfo{ValueType: ArrayType},
 			Node:    node,
 			Range:   node.LocRange,
 			Comment: foddersToComment(node, node.Fodder, node.CloseFodder),
 		}
 	case *ast.LiteralString:
 		return &Value{
-			Type:    StringType,
+			Type:    TypeInfo{ValueType: StringType},
 			Node:    node,
 			Range:   node.LocRange,
 			Comment: []string{node.Value},
 		}
 	case *ast.LiteralNumber:
 		return &Value{
-			Type:    NumberType,
+			Type:    TypeInfo{ValueType: NumberType},
 			Node:    node,
 			Range:   node.LocRange,
 			Comment: []string{node.OriginalString},
 		}
 	case *ast.LiteralBoolean:
 		return &Value{
-			Type:    BooleanType,
+			Type:    TypeInfo{ValueType: BooleanType},
 			Node:    node,
 			Range:   node.LocRange,
 			Comment: []string{strconv.FormatBool(node.Value)},
@@ -411,15 +510,73 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 
 		v := resolver.Vars(node).Get(string(node.Id))
 		if v != nil && v.Node != nil {
+			// If it came from a parameter, we need to rely on the type hint
+			if v.ParamFn != nil {
+				return &Value{
+					Node:     v.Node,
+					Range:    v.Loc,
+					Type:     v.Type,
+					TypeHint: typeHintCommentsToInfo(v.ParamFn, resolver, paramTypeComments(v.ParamPos, v.ParamFn)),
+				}
+			}
 			return NodeToValue(v.Node, resolver)
 		}
+
+		// function parameters might not have a backing AST node with no default
+		// if v != nil {
+		// 	return &Value{
+		// 		Node:  node,
+		// 		Range: v.Loc,
+		// 		Type:  v.Type,
+		// 	}
+		// }
 		return defaultToValue(node)
 	case *ast.Apply:
+		logf("apply %s", FmtNode(node))
 		targfn := NodeToValue(node.Target, resolver)
-		if targfn.Function == nil || targfn.Function.Return == nil {
+		if targfn.Type.Function == nil {
 			return defaultToValue(node)
 		}
-		return NodeToValue(targfn.Function.Return, resolver)
+
+		val := NodeToValue(targfn.Type.Function.Return, resolver)
+
+		rh := targfn.Type.Function.ReturnHint
+		if rh == nil {
+			logf("null rh %s", FmtNode(node))
+			return val
+		}
+
+		logf("returnhint %s", rh.String())
+
+		if !rh.hasTypeParam() {
+			logf("no type param %s", rh.String())
+			val.TypeHint = rh
+			return val
+		}
+
+		logf(" has type param: %s", FmtNode(targfn.Node))
+
+		// The return typehint has a type parameter we need to solve for
+		typeparams, err := inferTypeParameters(node, targfn, resolver)
+		if err != nil {
+			val.TypeHint = &TypeInfo{TypeHintError: err}
+			return val
+		}
+
+		for k, p := range typeparams {
+			logf(" infer %s => %s", k, p.String())
+		}
+
+		soln, err := solveTypeParameterInfo(rh, typeparams, resolver)
+		if err != nil {
+			val.TypeHint = &TypeInfo{TypeHintError: err}
+			logf(" error solving return %s", val.TypeHint.String())
+			return val
+		}
+
+		logf(" solved return %s", soln.String())
+		val.TypeHint = soln
+		return val
 	case *ast.Index:
 		switch idx := node.Index.(type) {
 		case *ast.LiteralNumber:
@@ -440,16 +597,18 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 
 			// Hardcoded access of stdlib
 			if lhs == StdLibValue {
-				stdfn := StdLibFunctions[idx.Value]
+				stdfn := StdLibValue.Type.Object.FieldMap[idx.Value].Type.Function
 				if stdfn != nil {
-					return &Value{Type: FunctionType, Comment: stdfn.Comment, Function: stdfn}
+					return &Value{Type: TypeInfo{ValueType: FunctionType, Function: stdfn}, Comment: stdfn.Comment}
 				}
 				return defaultToValue(node)
 			}
 
 			// object dotted access
-			if lhs.Object != nil && lhs.Object.FieldMap[idx.Value] != nil {
-				return NodeToValue(lhs.Object.FieldMap[idx.Value].Node, resolver)
+			if lhs.Type.Object != nil && lhs.Type.Object.FieldMap[idx.Value] != nil {
+				val := NodeToValue(lhs.Type.Object.FieldMap[idx.Value].Node, resolver)
+				// TODO: grab type hint here from object field?
+				return val
 			}
 		}
 		return defaultToValue(node)
@@ -457,15 +616,16 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 		if node.Op == ast.BopPlus {
 			// object templates
 			lhs, rhs := NodeToValue(node.Left, resolver), NodeToValue(node.Right, resolver)
-			if lhs.Object != nil && rhs.Object != nil {
-				return mergeObjectValues(lhs, rhs)
+			if lhs.Type.ValueType == ObjectType && rhs.Type.Object != nil {
+				rhs.Type.Object.Supers = append(rhs.Type.Object.Supers, lhs)
+				return rhs
 			}
 		}
 		return defaultToValue(node)
 	case *ast.DesugaredObject:
-		return objectToValue(node)
+		return objectToValue(node, resolver)
 	case *ast.Function:
-		return functionToValue(node)
+		return functionToValue(node, resolver)
 	case *ast.Import:
 		return importToValue(node, resolver)
 	default:

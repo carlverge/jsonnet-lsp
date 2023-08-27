@@ -1,0 +1,35 @@
+{
+    "valueType": "array",
+    "element": {
+        "valueType": "object",
+        "object": {
+            "fields": [
+                {
+                    "name": "a",
+                    "type": {
+                        "valueType": "null"
+                    },
+                    "typeHint": {
+                        "valueType": "string"
+                    },
+                    "comment": [
+                        "/*:string*/"
+                    ]
+                },
+                {
+                    "name": "b",
+                    "type": {
+                        "valueType": "null"
+                    },
+                    "typeHint": {
+                        "valueType": "number"
+                    },
+                    "comment": [
+                        "/*:number*/"
+                    ]
+                }
+            ],
+            "allFieldsKnown": true
+        }
+    }
+}
