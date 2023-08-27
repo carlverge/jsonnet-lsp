@@ -100,18 +100,28 @@ func walkStack(node ast.Node, stk []ast.Node, fn func(n ast.Node, stk []ast.Node
 		walkStack(a.Index, stk, fn)
 	case *ast.Local:
 		for _, b := range a.Binds {
-			walkStack(b.Body, stk, fn)
+			if b.Body != nil {
+				walkStack(b.Body, stk, fn)
+			} else if b.Fun != nil {
+				walkStack(b.Fun, stk, fn)
+			}
 		}
 		walkStack(a.Body, stk, fn)
 	case *ast.DesugaredObject:
 		for _, b := range a.Locals {
-			walkStack(b.Body, stk, fn)
+			if b.Body != nil {
+				walkStack(b.Body, stk, fn)
+			} else if b.Fun != nil {
+				walkStack(b.Fun, stk, fn)
+			}
 		}
 
 		for _, field := range a.Fields {
+
 			walkStack(field.Name, stk, fn)
 			walkStack(field.Body, stk, fn)
 		}
+
 		for _, assert := range a.Asserts {
 			walkStack(assert, stk, fn)
 		}
@@ -157,21 +167,31 @@ func UnwindLocals(root ast.Node) (VarMap, ast.Node) {
 }
 
 func StackAtLoc(root ast.Node, loc ast.Location) (res []ast.Node) {
-	// logf("stackAtLoc: %d:%d", loc.Line, loc.Column)
 	walkStack(root, nil, func(n ast.Node, stk []ast.Node) bool {
 		if n == nil || n.Loc() == nil {
 			return true
 		}
-		if !locInNode(n, loc) {
-			return false
+
+		// Functions sometimes have empty locations (like functions defined in an object field)
+		// check the body if the function itself doesn't have a location hit
+		switch nt := n.(type) {
+		case *ast.Function:
+			if !locInNode(nt, loc) && !locInNode(nt.Body, loc) {
+				return false
+			}
+		default:
+			if !locInNode(n, loc) {
+				return false
+			}
 		}
-		// logNodeTrace(n, len(stk)*2)
+
 		if len(stk) > len(res) {
 			res = make([]ast.Node, len(stk))
 			copy(res, stk)
 		}
 		return true
 	})
+
 	return res
 }
 
@@ -234,11 +254,15 @@ func StackVars(stk []ast.Node) VarMap {
 		case *ast.DesugaredObject:
 			for _, b := range n.Locals {
 				name := string(b.Variable)
-				tp, _ := simpleToValueType(b.Body)
+				node := b.Body
+				if b.Fun != nil {
+					node = b.Fun
+				}
+				tp, _ := simpleToValueType(node)
 				res[name] = &Var{
 					Name:     name,
 					Loc:      b.LocRange,
-					Node:     b.Body,
+					Node:     node,
 					Type:     tp,
 					StackPos: pos,
 				}

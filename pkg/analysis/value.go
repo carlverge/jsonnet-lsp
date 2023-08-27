@@ -171,6 +171,12 @@ func functionToValue(node *ast.Function) *Value {
 		Comment:  foddersToComment(node, node.ParenLeftFodder, node.ParenRightFodder),
 		Function: &Function{Params: make([]Param, len(node.Parameters))},
 	}
+
+	// The range for functions defined in objects isn't defined on the node itself, only the body
+	if !res.Range.IsSet() && node.Body.Loc() != nil {
+		res.Range = *node.Body.Loc()
+	}
+
 	_, res.Function.Return = UnwindLocals(node.Body)
 	res.Function.ReturnType, _ = simpleToValueType(res.Function.Return)
 
@@ -220,11 +226,16 @@ func objectToValue(node *ast.DesugaredObject, resolver Resolver) *Value {
 		}
 
 		ft, _ := simpleToValueType(fld.Body)
+		rng := fld.LocRange
+		if fldfn, ok := fld.Body.(*ast.Function); ok && fldfn.Body.Loc() != nil {
+			rng = *fldfn.Body.Loc()
+		}
+
 		res.Object.Fields = append(res.Object.Fields, Field{
 			Name:    fieldName,
 			Type:    ft,
 			Comment: foddersToComment(fld.Body), // XXX: Name comments?
-			Range:   fld.LocRange,
+			Range:   rng,
 			Node:    fld.Body,
 			Hidden:  fld.Hide == ast.ObjectFieldHidden,
 		})
@@ -400,14 +411,8 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 			Comment: []string{strconv.FormatBool(node.Value)},
 		}
 	case *ast.Local:
-		if len(node.Binds) == 0 {
-			return defaultToValue(node)
-		}
-		nb := node.Binds[0]
-		nv := NodeToValue(nb.Body, resolver)
-		// the local var definition will eat comments we'd expect on the child
-		nv.Comment = append(nv.Comment, foddersToComment(node, nb.VarFodder, nb.EqFodder, nb.CloseFodder)...)
-		return nv
+		// ignore varbinds when getting the value
+		return NodeToValue(node.Body, resolver)
 	case *ast.Var:
 		// hardcoded return for the stdlib
 		if string(node.Id) == "std" {
