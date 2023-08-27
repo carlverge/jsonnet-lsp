@@ -710,6 +710,7 @@ var StdLibFunctions = map[string]*Function{
 	"sign":     {ReturnType: NumberType, Params: []Param{{Name: "n", Type: NumberType}}},
 	"max":      {ReturnType: NumberType, Params: []Param{{Name: "a", Type: NumberType}, {Name: "b", Type: NumberType}}},
 	"min":      {ReturnType: NumberType, Params: []Param{{Name: "a", Type: NumberType}, {Name: "b", Type: NumberType}}},
+	"mod":      {ReturnType: NumberType, Params: []Param{{Name: "a", Type: NumberType}, {Name: "b", Type: NumberType}}},
 	"pow":      {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}, {Name: "n", Type: NumberType}}},
 	"exp":      {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
 	"log":      {ReturnType: NumberType, Params: []Param{{Name: "x", Type: NumberType}}},
