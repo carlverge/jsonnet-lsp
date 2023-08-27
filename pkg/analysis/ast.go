@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"sort"
@@ -52,6 +53,14 @@ func FmtNode(n ast.Node) string {
 	case nil:
 		return "<nil ast.Node>"
 	}
+}
+
+func PrintAst(root ast.Node, out io.Writer) {
+	walkStack(root, nil, func(n ast.Node, stk []ast.Node) bool {
+		out.Write([]byte(FmtNodeIndent(n, len(stk)*2)))
+		out.Write([]byte{'\n'})
+		return true
+	})
 }
 
 // WalkStack will walk the AST in depth first order, and keep track of the stack
