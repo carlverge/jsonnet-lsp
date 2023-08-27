@@ -129,6 +129,8 @@ type Value struct {
 	Comment []string          `json:"comment,omitempty"`
 	Node    ast.Node          `json:"-"`
 
+	StringValue *string
+
 	Object   *Object   `json:"object,omitempty"`
 	Function *Function `json:"function,omitempty"`
 }
@@ -192,7 +194,7 @@ func functionToValue(node *ast.Function) *Value {
 	return res
 }
 
-func objectToValue(node *ast.DesugaredObject) *Value {
+func objectToValue(node *ast.DesugaredObject, resolver Resolver) *Value {
 	res := &Value{
 		Type:    ObjectType,
 		Range:   node.LocRange,
@@ -205,8 +207,13 @@ func objectToValue(node *ast.DesugaredObject) *Value {
 
 	unknownFields := false
 	for _, fld := range node.Fields {
-		nt, ok := fld.Name.(*ast.LiteralString)
-		if !ok {
+		fieldName := ""
+
+		if nt, ok := fld.Name.(*ast.LiteralString); ok {
+			fieldName = nt.Value
+		} else if ov := NodeToValue(fld.Name, resolver); ov.StringValue != nil {
+			fieldName = *ov.StringValue
+		} else {
 			logf("unknown fld name: %T %v", fld.Name, fld.Name)
 			unknownFields = true
 			continue
@@ -214,14 +221,14 @@ func objectToValue(node *ast.DesugaredObject) *Value {
 
 		ft, _ := simpleToValueType(fld.Body)
 		res.Object.Fields = append(res.Object.Fields, Field{
-			Name:    nt.Value,
+			Name:    fieldName,
 			Type:    ft,
-			Comment: foddersToComment(fld.Body, nt.Fodder), // XXX: Name comments?
+			Comment: foddersToComment(fld.Body), // XXX: Name comments?
 			Range:   fld.LocRange,
 			Node:    fld.Body,
 			Hidden:  fld.Hide == ast.ObjectFieldHidden,
 		})
-		res.Object.FieldMap[nt.Value] = &(res.Object.Fields[len(res.Object.Fields)-1])
+		res.Object.FieldMap[fieldName] = &(res.Object.Fields[len(res.Object.Fields)-1])
 	}
 	res.Object.AllFieldsKnown = !unknownFields
 
@@ -372,10 +379,11 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 		}
 	case *ast.LiteralString:
 		return &Value{
-			Type:    StringType,
-			Node:    node,
-			Range:   node.LocRange,
-			Comment: []string{node.Value},
+			Type:        StringType,
+			Node:        node,
+			Range:       node.LocRange,
+			Comment:     []string{node.Value},
+			StringValue: &node.Value,
 		}
 	case *ast.LiteralNumber:
 		return &Value{
@@ -460,10 +468,21 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 			if lhs.Object != nil && rhs.Object != nil {
 				return mergeObjectValues(lhs, rhs)
 			}
+			// resolve the addition of strings, which is a common operation that affects
+			// lookup resolution
+			if lhs.StringValue != nil && rhs.StringValue != nil {
+				sval := *lhs.StringValue + *rhs.StringValue
+				return &Value{
+					Type:        StringType,
+					Range:       node.LocRange,
+					Node:        node,
+					StringValue: &sval,
+				}
+			}
 		}
 		return defaultToValue(node)
 	case *ast.DesugaredObject:
-		return objectToValue(node)
+		return objectToValue(node, resolver)
 	case *ast.Function:
 		return functionToValue(node)
 	case *ast.Import:

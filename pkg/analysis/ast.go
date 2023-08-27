@@ -109,6 +109,7 @@ func walkStack(node ast.Node, stk []ast.Node, fn func(n ast.Node, stk []ast.Node
 		}
 
 		for _, field := range a.Fields {
+			walkStack(field.Name, stk, fn)
 			walkStack(field.Body, stk, fn)
 		}
 		for _, assert := range a.Asserts {
