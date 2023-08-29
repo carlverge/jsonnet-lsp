@@ -80,6 +80,15 @@
           "description": "Binary path for jsonnet language server. If not set, the bundled LSP will be used.",
           "scope": "resource"
         },
+        "jsonnet.lsp.jpaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of additional search paths to use when importing files from jsonnet. Can be absolute or workspace-relative.",
+          "scope": "resource"
+        },
         "jsonnet.lsp.diag.linter": {
           "type": "boolean",
           "default": true,

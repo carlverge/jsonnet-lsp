@@ -1,7 +1,6 @@
 package lsp
 
 import (
-	"strings"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -190,19 +190,40 @@ type OverlayImporter struct {
 	rootURI uri.URI
 	rootFS  fs.FS
 	paths   []string
+
+	// Additional user specified paths (can change at runtime)
+	jpathLock sync.Mutex
+	jpaths    []string
 }
 
-func (imp *OverlayImporter) readURI(uri uri.URI) ([]byte, error) {
+func (imp *OverlayImporter) readURI(uri uri.URI) (res []byte, err error) {
 	// check overlay first -- use parsed as an unparsable result is not useful
 	if ent := imp.overlay.Parsed(uri); ent != nil {
 		return []byte(ent.Contents), nil
 	}
+
+	// TODO(@carlverge): More cruft with filesystem layout and importing.
+	// If a search path is outside the workspace (and the rootFS we created)
+	// then we can't open the file with the fs.FS functions.
+	if filepath.IsAbs(uri.Filename()) && !strings.HasPrefix(uri.Filename(), imp.rootURI.Filename()) {
+		return os.ReadFile(uri.Filename())
+	}
+
 	path, err := filepath.Rel(imp.rootURI.Filename(), uri.Filename())
 	if err != nil {
 		return nil, fmt.Errorf("failed to open URI '%s': %v", uri, err)
 	}
-	defer func(t time.Time) { tracef("reading file %s in %s", path, time.Since(t)) }(time.Now())
+
+	defer func(t time.Time) {
+		tracef("read file %s in %s (size=%d err=%v)", path, time.Since(t), len(res), err)
+	}(time.Now())
 	return fs.ReadFile(imp.rootFS, path)
+}
+
+func (imp *OverlayImporter) SetJPaths(jpaths []string) {
+	imp.jpathLock.Lock()
+	defer imp.jpathLock.Unlock()
+	imp.jpaths = jpaths
 }
 
 func (imp *OverlayImporter) Import(from, path string) (jsonnet.Contents, string, error) {
@@ -227,6 +248,20 @@ func (imp *OverlayImporter) Import(from, path string) (jsonnet.Contents, string,
 	for _, search := range imp.paths {
 		candidates = append(candidates, uri.File(filepath.Join(rootPath, search, path)))
 	}
+
+	// JPaths feel very hacked in here.
+	// They need to be reconfigurable at runtime.
+	imp.jpathLock.Lock()
+	jpaths := imp.jpaths
+	imp.jpathLock.Unlock()
+	for _, search := range jpaths {
+		if filepath.IsAbs(search) {
+			candidates = append(candidates, uri.File(filepath.Join(search, path)))
+		} else {
+			candidates = append(candidates, uri.File(filepath.Join(rootPath, search, path)))
+		}
+	}
+
 	tracef("read-path: path='%s' from='%s' candidates=%v", path, from, candidates)
 	tracef("searching for path '%s' in candidates %v", path, candidates)
 	for _, candidate := range candidates {

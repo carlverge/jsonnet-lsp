@@ -58,7 +58,6 @@ async function startClient(binaryPath: string, cfg: WorkspaceConfiguration): Pro
 	);
 
 	client.start();
-	client.sendNotification(DidChangeConfigurationNotification.type, {settings: cfg});
 }
 
 function builtinBinaryPath(): string {
@@ -124,6 +123,8 @@ export async function activate(context: ExtensionContext) {
 			await window.showTextDocument(doc, ViewColumn.Beside, true);
 		})
 	);
+
+	await client.sendNotification(DidChangeConfigurationNotification.type, {settings: cfg});
 }
 
 export function deactivate(): Thenable<void> | undefined {

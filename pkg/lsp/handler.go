@@ -24,6 +24,7 @@ type Configuration struct {
 		Linter   bool `json:"linter"`
 		Evaluate bool `json:"evaluate"`
 	} `json:"diag"`
+	JPaths []string `json:"jpaths"`
 
 	Fmt struct {
 		Indent           int    `json:"indent"`
@@ -94,6 +95,7 @@ func (s *Server) Initialized(ctx context.Context, params *protocol.InitializedPa
 func (s *Server) Initialize(ctx context.Context, params *protocol.InitializeParams) (result *protocol.InitializeResult, err error) {
 
 	s.rootURI = findRootDirectory(params)
+	// s.rootFS = os.DirFS("/")
 	s.rootFS = os.DirFS(s.rootURI.Filename())
 
 	// Check for bazel generated output directory
@@ -104,8 +106,6 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 	}
 
 	s.importer = &OverlayImporter{overlay: s.overlay, rootURI: s.rootURI, rootFS: s.rootFS, paths: s.searchPaths}
-
-	logf("initialized with rootURI=%s searchURI=%v", s.rootURI, s.searchPaths)
 
 	_ = s.notifier.LogMessage(ctx, &protocol.LogMessageParams{
 		Message: "Jsonnet LSP Server Initialized",
@@ -135,13 +135,17 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 }
 
 func (s *Server) DidChangeConfiguration(ctx context.Context, params *protocol.DidChangeConfigurationParams) (err error) {
-	logf("did change config: %+v", params.Settings)
 	data, _ := json.Marshal(params.Settings)
+	logf("did change config: %s", string(data))
 	newcfg := &Configuration{}
 	if err := json.Unmarshal(data, newcfg); err != nil {
 		logf("failed to parse new configuration: %+v", err)
 		return nil
 	}
+
+	// TODO(@carlverge): Rethink how paths are threaded through the code, this is getting too messy.
+	s.importer.SetJPaths(newcfg.JPaths)
+
 	// Racy in the sense we could see an old pointer, but that is OK.
 	s.config = newcfg
 
@@ -307,7 +311,7 @@ func (s *Server) Completion(ctx context.Context, params *protocol.CompletionPara
 		ents := []fs.DirEntry{}
 
 		// Dedup files/directories from search paths
-		for _, sp := range append([]string{""}, s.searchPaths...) {
+		for _, sp := range append(append([]string{""}, s.searchPaths...), s.config.JPaths...) {
 			entries, _ := fs.ReadDir(s.rootFS, filepath.Join(sp, path))
 			for _, ent := range entries {
 				if seen[ent.Name()] {
