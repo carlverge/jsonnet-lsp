@@ -202,16 +202,17 @@ func (imp *OverlayImporter) readURI(uri uri.URI) (res []byte, err error) {
 		return []byte(ent.Contents), nil
 	}
 
-	// TODO(@carlverge): More cruft with filesystem layout and importing.
-	// If a search path is outside the workspace (and the rootFS we created)
-	// then we can't open the file with the fs.FS functions.
-	if filepath.IsAbs(uri.Filename()) && !strings.HasPrefix(uri.Filename(), imp.rootURI.Filename()) {
-		return os.ReadFile(uri.Filename())
-	}
-
 	path, err := filepath.Rel(imp.rootURI.Filename(), uri.Filename())
 	if err != nil {
 		return nil, fmt.Errorf("failed to open URI '%s': %v", uri, err)
+	}
+
+	// TODO(@carlverge): More cruft with filesystem layout and importing.
+	// If a search path is outside the workspace (and the rootFS we created)
+	// then we can't open the file with the fs.FS functions.
+	if filepath.IsAbs(uri.Filename()) && strings.HasPrefix(path, "../") {
+		tracef("attempting import of file outside of workspace (root=%s): %s", imp.rootURI.Filename(), path)
+		return os.ReadFile(uri.Filename())
 	}
 
 	defer func(t time.Time) {
