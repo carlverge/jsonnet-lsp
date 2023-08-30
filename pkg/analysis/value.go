@@ -330,7 +330,10 @@ func knownApply(app *ast.Apply) (ValueType, bool) {
 }
 
 func defaultToValue(node ast.Node) *Value {
-	res := &Value{Comment: foddersToComment(node)}
+	res := &Value{
+		Node:    node,
+		Comment: foddersToComment(node),
+	}
 	res.Type, _ = simpleToValueType(node)
 	if node.Loc() != nil {
 		res.Range = *node.Loc()
