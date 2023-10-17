@@ -42,3 +42,27 @@ These are features I consider pretty important that are still missing:
 
 * Github actions are setup to publish to OpenVSX automatically when a release is created
 * The LSP binaries are bundled into the `.vsix` extension, to help reduce bugs from version skew and simplify installation.
+
+## Editor setup
+
+### Emacs
+
+[Emacs 29.1](https://www.masteringemacs.org/article/whats-new-in-emacs-29-1) has built in support for [eglot](https://github.com/joaotavora/eglot) and [use-package](https://www.gnu.org/software/emacs/manual/html_node/use-package/index.html). Assuming a functional package setup to download and install jsonnet-mode for Emacs. The below snippet will setup jsonnet-mode with jsonnet-lsp as language server using eglot.
+
+    (use-package jsonnet-mode
+      :ensure t
+      :config
+      (add-to-list 'eglot-server-programs
+                   '(jsonnet-mode . ("jsonnet-lsp" "lsp")))
+      :mode (
+             ("\\.jsonnet\\'" . jsonnet-mode)
+             ("\\.jsonnet.TEMPLATE\\'" . jsonnet-mode)
+             )
+      :hook
+      (jsonnet-mode . (lambda()
+                        (eglot-ensure))))
+
+The above snippet assumes that `jsonnet-lsp` is installed into the PATH. Using the `runlsp.sh` script to dynamically build jsonnet-lsp on startup, a small update to the eglot-server-programs is needed.
+
+      (add-to-list 'eglot-server-programs
+                   '(jsonnet-mode . ("/full/path/to/repo/jsonnet-lsp/runlsp.sh")))
