@@ -87,7 +87,7 @@ func RunServer(ctx context.Context, stdout *os.File) error {
 		overlay:        overlay.NewOverlay(),
 		cancel:         cancel,
 		notifier:       notifier,
-		config:         &Configuration{},
+		config:         defaultConfiguration(),
 	}
 
 	handler := srv.Handler()

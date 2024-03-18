@@ -10,7 +10,7 @@
   "license": "Apache License Version 2.0",
   "description": "Jsonnet IDE Support. Autocomplete, lint, format, goto def, signature help.",
   "icon": "images/icon.png",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -97,9 +97,9 @@
         },
         "jsonnet.lsp.diag.evaluate": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "scope": "resource",
-          "description": "Enable live evaluation diagnostics"
+          "description": "Enable live evaluation diagnostics. (Warning: can expensive)"
         },
         "jsonnet.lsp.fmt.indent": {
           "type": "number",

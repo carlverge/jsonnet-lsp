@@ -19,24 +19,48 @@ import (
 	"go.lsp.dev/uri"
 )
 
-type Configuration struct {
-	Diag struct {
-		Linter   bool `json:"linter"`
-		Evaluate bool `json:"evaluate"`
-	} `json:"diag"`
-	JPaths []string `json:"jpaths"`
 
-	Fmt struct {
-		Indent           int    `json:"indent"`
-		MaxBlankLines    int    `json:"maxBlankLines"`
-		StringStyle      string `json:"stringStyle"`
-		CommentStyle     string `json:"commentStyle"`
-		PrettyFieldNames bool   `json:"prettyFieldNames"`
-		PadArrays        bool   `json:"padArrays"`
-		PadObjects       bool   `json:"padObjects"`
-		SortImports      bool   `json:"sortImports"`
-		ImplicitPlus     bool   `json:"implicitPlus"`
-	} `json:"fmt"`
+type DiagConfiguration struct {
+	Linter   bool `json:"linter"`
+	Evaluate bool `json:"evaluate"`
+}
+
+type FmtConfiguration struct {
+	Indent           int    `json:"indent"`
+	MaxBlankLines    int    `json:"maxBlankLines"`
+	StringStyle      string `json:"stringStyle"`
+	CommentStyle     string `json:"commentStyle"`
+	PrettyFieldNames bool   `json:"prettyFieldNames"`
+	PadArrays        bool   `json:"padArrays"`
+	PadObjects       bool   `json:"padObjects"`
+	SortImports      bool   `json:"sortImports"`
+	ImplicitPlus     bool   `json:"implicitPlus"`
+}
+
+func defaultConfiguration() *Configuration {
+	return &Configuration{
+		Diag: DiagConfiguration{
+			Linter:   true,
+			Evaluate: false,
+		},
+		Fmt: FmtConfiguration{
+			Indent:           2,
+			StringStyle:      "\"",
+			CommentStyle:     "//",
+			MaxBlankLines:    2,
+			PrettyFieldNames: true,
+			PadArrays:        false,
+			PadObjects:       true,
+			ImplicitPlus:     true,
+			SortImports:      true,
+		},
+	}
+}
+
+type Configuration struct {
+	Diag   DiagConfiguration `json:"diag"`
+	JPaths []string          `json:"jpaths"`
+	Fmt    FmtConfiguration  `json:"fmt"`
 }
 
 func (c *Configuration) FormatterOptions() formatter.Options {

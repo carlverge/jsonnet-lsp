@@ -57,7 +57,8 @@ async function startClient(binaryPath: string, cfg: WorkspaceConfiguration): Pro
 		clientOptions
 	);
 
-	client.start();
+	await client.start();
+	await client.sendNotification(DidChangeConfigurationNotification.type, {settings: cfg});
 }
 
 function builtinBinaryPath(): string {
