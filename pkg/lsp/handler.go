@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -605,8 +604,8 @@ func (s *Server) Formatting(ctx context.Context, params *protocol.DocumentFormat
 	if err != nil {
 		return []protocol.TextEdit{}, nil
 	}
-
-	return []protocol.TextEdit{{Range: protocol.Range{End: protocol.Position{Line: math.MaxInt32}}, NewText: string(out)}}, nil
+    lines := uint32(strings.Count(current.Contents, "\n") + 1)
+	return []protocol.TextEdit{{Range: protocol.Range{End: protocol.Position{Line: lines}}, NewText: string(out)}}, nil
 }
 
 type EvaluateParams struct {
