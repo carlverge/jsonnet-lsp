@@ -376,7 +376,12 @@ type Resolver interface {
 	Import(from, path string) ast.Node
 }
 
-func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
+var maxStackDepth = 300
+
+func nodeToValue(node ast.Node, resolver Resolver, stackDepth int) (res *Value) {
+	if stackDepth > maxStackDepth {
+		return defaultToValue(node)
+	}
 	// short circuit the more complicated logic if it's a known leaf value
 	// that cannot have more complex values
 	if _, isLeaf := simpleToValueType(node); isLeaf {
@@ -415,7 +420,7 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 		}
 	case *ast.Local:
 		// ignore varbinds when getting the value
-		return NodeToValue(node.Body, resolver)
+		return nodeToValue(node.Body, resolver, stackDepth + 1)
 	case *ast.Var:
 		// hardcoded return for the stdlib
 		if string(node.Id) == "std" {
@@ -427,21 +432,21 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 
 		v := resolver.Vars(node).Get(string(node.Id))
 		if v != nil && v.Node != nil {
-			return NodeToValue(v.Node, resolver)
+			return nodeToValue(v.Node, resolver, stackDepth + 1)
 		}
 		return defaultToValue(node)
 	case *ast.Apply:
-		targfn := NodeToValue(node.Target, resolver)
+		targfn := nodeToValue(node.Target, resolver, stackDepth + 1)
 		if targfn.Function == nil || targfn.Function.Return == nil {
 			return defaultToValue(node)
 		}
-		return NodeToValue(targfn.Function.Return, resolver)
+		return nodeToValue(targfn.Function.Return, resolver, stackDepth + 1)
 	case *ast.Index:
 		switch idx := node.Index.(type) {
 		case *ast.LiteralNumber:
 			// Number index of an array
 
-			target := NodeToValue(node.Target, resolver)
+			target := nodeToValue(node.Target, resolver, stackDepth + 1)
 			idxInt, intErr := strconv.ParseInt(idx.OriginalString, 10, 64)
 			targArr, _ := target.Node.(*ast.Array)
 
@@ -449,10 +454,10 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 				return defaultToValue(node)
 			}
 
-			return NodeToValue(targArr.Elements[idxInt].Expr, resolver)
+			return nodeToValue(targArr.Elements[idxInt].Expr, resolver, stackDepth + 1)
 		case *ast.LiteralString:
 			// String index of an object
-			lhs := NodeToValue(node.Target, resolver)
+			lhs := nodeToValue(node.Target, resolver, stackDepth + 1)
 
 			// Hardcoded access of stdlib
 			if lhs == StdLibValue {
@@ -465,14 +470,14 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 
 			// object dotted access
 			if lhs.Object != nil && lhs.Object.FieldMap[idx.Value] != nil {
-				return NodeToValue(lhs.Object.FieldMap[idx.Value].Node, resolver)
+				return nodeToValue(lhs.Object.FieldMap[idx.Value].Node, resolver, stackDepth + 1)
 			}
 		}
 		return defaultToValue(node)
 	case *ast.Binary:
 		if node.Op == ast.BopPlus {
 			// object templates
-			lhs, rhs := NodeToValue(node.Left, resolver), NodeToValue(node.Right, resolver)
+			lhs, rhs := nodeToValue(node.Left, resolver, stackDepth + 1), nodeToValue(node.Right, resolver, stackDepth + 1)
 			if lhs.Object != nil && rhs.Object != nil {
 				return mergeObjectValues(lhs, rhs)
 			}
@@ -498,4 +503,8 @@ func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
 	default:
 		return defaultToValue(node)
 	}
+}
+
+func NodeToValue(node ast.Node, resolver Resolver) (res *Value) {
+	return nodeToValue(node, resolver, 0)
 }
