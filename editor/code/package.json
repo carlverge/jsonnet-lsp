@@ -10,7 +10,7 @@
   "license": "Apache License Version 2.0",
   "description": "Jsonnet IDE Support. Autocomplete, lint, format, goto def, signature help.",
   "icon": "images/icon.png",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "engines": {
     "vscode": "^1.75.0"
   },
