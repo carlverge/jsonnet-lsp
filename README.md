@@ -66,3 +66,16 @@ The above snippet assumes that `jsonnet-lsp` is installed into the PATH. Using t
 
       (add-to-list 'eglot-server-programs
                    '(jsonnet-mode . ("/full/path/to/repo/jsonnet-lsp/runlsp.sh")))
+
+### Neovim
+This recipe uses [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) to setup jsonnet-lsp with neovim.
+You will need to install the `nvim-lspconfig` plugin uses its instructions. Then, in you lua setup file (e.g. ~/.config/nvim/init.lua, see [the official docs](https://neovim.io/doc/user/lua-guide.html) for setup) you can add:
+```lua
+local nvim_lsp = require('lspconfig')
+nvm_lsp.jsonnet_ls.setup{
+    cmd = { "/path/to/jsonnet-lsp/runlsp.sh" },
+    filetypes = { "jsonnet", "libsonnet", ".jsonnet.template" },
+    root_dir = nvm_lsp.util.root_pattern(".git", vim.fn.getcwd()),
+    settings = {},
+}
+```
