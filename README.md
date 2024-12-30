@@ -33,6 +33,16 @@ These are features I consider pretty important that are still missing:
 * More IDE options (options for linting, jpath, etc)
 * First class multi-dimension jsonnet support
 
+## To Install
+
+Pre-requisite: go verison 1.19 or later
+
+```
+go install github.com/carlverge/jsonnet-lsp@latest
+```
+
+The above should place the jsonnet-lsp command in your `${HOME}/go/bin` directory.
+
 ## Development
 
 * To develop the LSP, change the `jsonnet.lsp.binaryPath` setting to the `runlsp.sh` script in the root. Reloading the LSP in vscode (shift+cmd+p -> jsonnet: reload language server) will rebuild the server.
